@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv()
 
 import db  # noqa: E402
-from engine import accounts, config, prompts, providers  # noqa: E402
+from engine import accounts, config, prompts, providers, vault  # noqa: E402
 from engine.llm import check_configured_models, list_models  # noqa: E402
 from engine.orchestrator import Orchestrator  # noqa: E402
 
@@ -90,6 +90,18 @@ async def execute_turn(turn_id: str, conversation_id: str, mode: str, question: 
             db.prior_turns, conversation_id, turn_id, config.MEMORY_TURNS
         )
         memory = prompts.memory_preamble(prior)
+
+        # Long-term memory: the vault. Retrieved notes are ANNOUNCED before the
+        # run starts -- this text is about to be sent to four AI providers, and
+        # the user should be able to see exactly what left their machine rather
+        # than trusting that the retrieval was sensible.
+        notes = await asyncio.to_thread(_vault_notes, question)
+        if notes:
+            await bus.emit("vault", None, {
+                "notes": [{"path": n.path, "heading": n.heading,
+                           "chars": len(n.body)} for n in notes],
+            })
+            memory = vault.as_context(notes) + "\n" + memory
         orch = Orchestrator(bus.emit, memory=memory)
         answer = await orch.run(mode, question)
         await asyncio.to_thread(db.finish_turn, turn_id, answer, None)
@@ -552,9 +564,70 @@ async def no_cache_static(request: Request, call_next):
     return response
 
 
+def _vault_notes(question: str):
+    """Relevant vault sections, or [] when no vault is configured."""
+    root = vault.vault_path()
+    if root is None:
+        return []
+    conn = db.connect()
+    try:
+        return vault.search(conn, question,
+                            budget_chars=config.VAULT_BUDGET_CHARS,
+                            max_notes=config.VAULT_MAX_NOTES)
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+
+def _reindex_vault() -> dict:
+    root = vault.vault_path()
+    if root is None:
+        return {"configured": False, "sections": 0,
+                "help": "Set VAULT_PATH in .env to the folder holding your notes."}
+    conn = db.connect()
+    try:
+        n = vault.build_index(conn, root)
+        return {"configured": True, "path": str(root), "sections": n}
+    finally:
+        conn.close()
+
+
+@app.get("/api/vault")
+async def api_vault_status(council_session: str | None = Cookie(default=None)):
+    require_user(council_session)
+    root = vault.vault_path()
+    if root is None:
+        return {"configured": False,
+                "help": "Set VAULT_PATH in .env to a folder of markdown notes."}
+    conn = db.connect()
+    try:
+        n = conn.execute("SELECT COUNT(*) c FROM vault_fts").fetchone()["c"]
+    except Exception:
+        n = 0
+    finally:
+        conn.close()
+    return {"configured": True, "path": str(root), "sections": n,
+            "excluded": sorted(vault.ALWAYS_EXCLUDE)}
+
+
+@app.post("/api/vault/reindex")
+async def api_vault_reindex(council_session: str | None = Cookie(default=None)):
+    require_user(council_session)
+    return await asyncio.to_thread(_reindex_vault)
+
+
 @app.on_event("startup")
 async def startup():
     db.init()
+    # Index once at boot so the first question already has memory. Cheap for a
+    # personal vault; re-run from the UI after editing notes.
+    if vault.vault_path() is not None:
+        try:
+            r = await asyncio.to_thread(_reindex_vault)
+            print(f"[vault] indexed {r.get('sections', 0)} sections from {r.get('path')}")
+        except Exception as exc:
+            print(f"[vault] index failed: {exc}")
 
 
 @app.exception_handler(HTTPException)

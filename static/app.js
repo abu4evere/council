@@ -319,7 +319,20 @@ async function renderPastTurn(t) {
   try {
     const events = await api(`/api/turns/${t.id}/events?after=0`);
     for (const ev of events) {
-      if (ev.type === "agent_start") {
+      if (ev.type === "vault" && ev.notes && ev.notes.length) {
+        const box = el("div", "vault-note");
+        box.appendChild(el("div", "vault-head",
+          `Recalled ${ev.notes.length} note${ev.notes.length === 1 ? "" : "s"} from your vault`));
+        const list = el("ul", "vault-list");
+        for (const n of ev.notes) {
+          const li = el("li", "");
+          li.appendChild(el("span", "vault-path", n.path));
+          if (n.heading) li.appendChild(el("span", "vault-heading", ` · ${n.heading}`));
+          list.appendChild(li);
+        }
+        box.appendChild(list);
+        turn.insertBefore(box, agentsBox);
+      } else if (ev.type === "agent_start") {
           const p = agentPanel(agentsBox, ev.agent, ev, true);
         p.body.classList.remove("streaming");
       } else if (ev.type === "agent_done") {
@@ -466,6 +479,25 @@ function handleEvent(ev, agentsBox, turnEl) {
     case "stage":
       setStage(ev.label);
       break;
+
+    case "vault": {
+      // Show exactly which notes were sent. This text left the machine for
+      // four AI providers, so it is stated plainly rather than assumed.
+      const box = el("div", "vault-note");
+      const head = el("div", "vault-head",
+        `Recalled ${ev.notes.length} note${ev.notes.length === 1 ? "" : "s"} from your vault`);
+      box.appendChild(head);
+      const list = el("ul", "vault-list");
+      for (const n of ev.notes) {
+        const li = el("li", "");
+        li.appendChild(el("span", "vault-path", n.path));
+        if (n.heading) li.appendChild(el("span", "vault-heading", ` · ${n.heading}`));
+        list.appendChild(li);
+      }
+      box.appendChild(list);
+      turnEl.insertBefore(box, turnEl.querySelector(".agents-wrap"));
+      break;
+    }
 
     case "agent_start": {
       const p = agentPanel(groupFor(agentsBox, ev.role), ev.agent, ev, true);

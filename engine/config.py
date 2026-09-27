@@ -328,6 +328,13 @@ def parallel_for(provider: str) -> int:
 # quadratically and the model drowns in its own old arguments.
 MEMORY_TURNS = 6
 
+# Long-term memory (see engine/vault.py). Retrieved note text competes with the
+# answer for the same 8000 tokens/minute window, so the budget is deliberately
+# small -- enough to remind the models of project context, not enough to crowd
+# out their reasoning.
+VAULT_BUDGET_CHARS = int(os.environ.get("VAULT_BUDGET_CHARS", "3000"))
+VAULT_MAX_NOTES = int(os.environ.get("VAULT_MAX_NOTES", "5"))
+
 
 def all_agents() -> list[Agent]:
     return [*PROPOSERS, AGGREGATOR, DEBATE_ARCHITECT, DEBATE_CRITIC, DEBATE_JUDGE]

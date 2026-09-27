@@ -114,6 +114,31 @@ python -m uvicorn server:app --host 0.0.0.0 --port 8000
 
 Open <http://localhost:8000>.
 
+## Long-term memory (optional)
+
+Point Council at a folder of markdown notes and it searches them before every
+run, so you stop pasting the same project context into every prompt. An
+Obsidian vault is exactly such a folder -- no plugin, no API, no sync service.
+
+```
+VAULT_PATH=C:/Users/You/Documents/My Vault
+```
+
+Notes are split at markdown headings, because a section is a unit of meaning:
+retrieving `## Constraints` whole is useful, while 500 characters straddling
+two topics is noise. Search uses SQLite's built-in FTS5 rather than embeddings
+-- no embedding API, no vector store, no re-index pipeline, and a keyword match
+is debuggable in a way a cosine score is not.
+
+**Privacy.** Retrieved text is sent to the model providers. So the vault is
+opt-in, `.private`, `.secret`, `.obsidian`, `.trash`, `.git`, `node_modules`
+and `templates` are never indexed (add more with `VAULT_EXCLUDE`), and every
+run displays exactly which notes it used. Nothing leaves quietly.
+
+Retrieval is capped at ~3000 characters. That budget competes with the answer
+for the same 8000 tokens/minute window, so unbounded recall would turn every
+run into a `413`.
+
 ## Using it from your phone
 
 `--host 0.0.0.0` is what makes this possible — without it the server only
