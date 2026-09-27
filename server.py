@@ -317,6 +317,7 @@ async def api_health(council_session: str | None = Cookie(default=None)):
         "proposers_total": len(config.PROPOSERS),
         "help": "" if configured else config.missing_key_help(),
         "rounds": config.DEBATE_ROUNDS,
+        "breaker": __import__("engine.llm", fromlist=["BREAKER"]).BREAKER.snapshot(),
         "seats": [
             {"key": a.key, "label": a.label, "model": a.model,
              "provider": a.provider, "color": a.color,

@@ -240,7 +240,38 @@ async def main():
             if val is not None:
                 os.environ[v] = val
 
-    # 12. Memory preamble must survive being passed through a real run.
+    # 12. CIRCUIT BREAKER. Observed failure: when Gemini began returning 503,
+    #     every Gemini seat independently retried and waited, turning a 40s run
+    #     into three minutes. After N consecutive failures a provider must fail
+    #     fast so the seat falls back immediately.
+    from engine.breaker import CircuitBreaker
+    b = CircuitBreaker(threshold=3, cooldown=60)
+    opened_at_failure = None
+    for i in range(1, 5):
+        b.record_failure("gemini")
+        if b.is_open("gemini") and opened_at_failure is None:
+            opened_at_failure = i
+    if opened_at_failure == 3 and not b.is_open("groq"):
+        print("[PASS] breaker opens after 3 failures, and only for that provider")
+    else:
+        ok = False
+        print(f"[FAIL] breaker opened at failure {opened_at_failure}, "
+              f"groq_open={b.is_open('groq')}")
+
+    b2 = CircuitBreaker(threshold=2, cooldown=0.01)
+    for _ in range(2):
+        b2.record_failure("x")
+    was_open = b2.is_open("x")
+    await asyncio.sleep(0.02)
+    probe_allowed = not b2.is_open("x")
+    b2.record_success("x")
+    if was_open and probe_allowed and not b2.is_open("x"):
+        print("[PASS] breaker half-opens after cooldown and closes on a good probe")
+    else:
+        ok = False
+        print(f"[FAIL] breaker recovery: open={was_open} probe={probe_allowed}")
+
+    # 13. Memory preamble must survive being passed through a real run.
     from engine import prompts as P
     pre = P.memory_preamble([{"user_prompt": "earlier q", "final_answer": "earlier a"}])
     if "earlier q" in pre and "earlier a" in pre and "Current question" in pre:

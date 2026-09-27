@@ -9,11 +9,17 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import random
 from typing import AsyncIterator
 
 import httpx
 
+from .breaker import CircuitBreaker
 from .providers import Provider, get as get_provider
+
+# One breaker for the process. Shared across runs on purpose: if Gemini is
+# overloaded, the next run should already know that.
+BREAKER = CircuitBreaker()
 
 
 class ModelError(Exception):
@@ -81,6 +87,16 @@ async def stream_completion(
         "stream": True,
     }
 
+    if BREAKER.is_open(prov.key):
+        # ModelError, not a distinct type: every fallback path in the
+        # orchestrator already handles a failed seat correctly, and a tripped
+        # breaker IS a failed seat -- just one we predicted instead of paying
+        # a timeout to discover.
+        raise ModelError(
+            f"{prov.label}: skipped, {BREAKER.seconds_remaining(prov.key):.0f}s "
+            "left in cooldown after repeated failures"
+        )
+
     saw_content = False
     saw_reasoning = False
     finish = None
@@ -101,13 +117,24 @@ async def stream_completion(
                     saw_reasoning = True
                 elif kind == "finish":
                     finish = value
+            BREAKER.record_success(prov.key)
             break
         except _RateLimited as rl:
+            BREAKER.record_failure(prov.key)
             if saw_content or attempt >= 4:
                 raise ModelError(f"{prov.label}/{model}: {rl.detail}") from None
-            # Exponential backoff with a little headroom: an overloaded provider
-            # needs longer than a rate limit, and hammering it makes it worse.
-            wait = rl.retry_after if rl.retry_after else min(2 ** attempt * 2 + 1, 25)
+            if BREAKER.is_open(prov.key):
+                raise ModelError(
+                    f"{prov.label}/{model}: {rl.detail} - provider now in cooldown"
+                ) from None
+            # FULL JITTER. A deterministic backoff makes several seats that hit
+            # the same limit together retry together and collide again. Spreading
+            # them uniformly across the window is strictly better under
+            # contention, at no cost when there is none.
+            if rl.retry_after:
+                wait = rl.retry_after
+            else:
+                wait = random.uniform(0, min(2 ** attempt * 3, 30))
             attempt += 1
             await asyncio.sleep(wait)
 
