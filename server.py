@@ -97,7 +97,8 @@ def load_user_keys(user_id: str | None) -> dict:
 
 
 async def execute_turn(turn_id: str, conversation_id: str, mode: str, question: str,
-                       user_keys: dict | None = None) -> None:
+                       user_keys: dict | None = None,
+                       turn_owner_id: str | None = None) -> None:
     bus = BUSES[turn_id]
     try:
         prior = await asyncio.to_thread(
@@ -109,7 +110,7 @@ async def execute_turn(turn_id: str, conversation_id: str, mode: str, question: 
         # run starts -- this text is about to be sent to four AI providers, and
         # the user should be able to see exactly what left their machine rather
         # than trusting that the retrieval was sensible.
-        notes = await asyncio.to_thread(_vault_notes, question)
+        notes = await asyncio.to_thread(_vault_notes, question, turn_owner_id)
         if notes:
             await bus.emit("vault", None, {
                 "notes": [{"path": n.path, "heading": n.heading,
@@ -396,7 +397,7 @@ async def api_create_turn(
     bus = RunBus(turn_id)
     BUSES[turn_id] = bus
     bus.task = asyncio.create_task(
-        execute_turn(turn_id, cid, mode, question, user_keys))
+        execute_turn(turn_id, cid, mode, question, user_keys, owner_id(user)))
     return {"turn_id": turn_id}
 
 
@@ -595,14 +596,31 @@ async def no_cache_static(request: Request, call_next):
     return response
 
 
-def _vault_notes(question: str):
-    """Relevant vault sections, or [] when no vault is configured."""
-    root = vault.vault_path()
-    if root is None:
+def _user_vault_root(user_id: str | None) -> "Path | None":
+    """This user's own notes folder.
+
+    Falls back to the server-wide VAULT_PATH only when there are no accounts --
+    a single-user local install. Once accounts exist, one person's notes must
+    never be reachable from another person's question.
+    """
+    from pathlib import Path
+    if user_id:
+        raw = (db.get_user_vault(user_id) or "").strip()
+        if raw:
+            p = Path(raw).expanduser()
+            return p if p.is_dir() else None
+        return None
+    return vault.vault_path()
+
+
+def _vault_notes(question: str, user_id: str | None):
+    """Relevant sections from THIS user's vault, or []."""
+    owner = user_id or "__local__"
+    if _user_vault_root(user_id) is None:
         return []
     conn = db.connect()
     try:
-        return vault.search(conn, question,
+        return vault.search(conn, question, owner,
                             budget_chars=config.VAULT_BUDGET_CHARS,
                             max_notes=config.VAULT_MAX_NOTES)
     except Exception:
@@ -611,14 +629,15 @@ def _vault_notes(question: str):
         conn.close()
 
 
-def _reindex_vault() -> dict:
-    root = vault.vault_path()
+def _reindex_vault(user_id: str | None) -> dict:
+    owner = user_id or "__local__"
+    root = _user_vault_root(user_id)
     if root is None:
         return {"configured": False, "sections": 0,
-                "help": "Set VAULT_PATH in .env to the folder holding your notes."}
+                "help": "Point Council at a folder of markdown notes to give it memory."}
     conn = db.connect()
     try:
-        n = vault.build_index(conn, root)
+        n = vault.build_index(conn, root, owner)
         return {"configured": True, "path": str(root), "sections": n}
     finally:
         conn.close()
@@ -712,26 +731,60 @@ async def _probe_key(provider: str, key: str) -> tuple[bool, str]:
 
 @app.get("/api/vault")
 async def api_vault_status(council_session: str | None = Cookie(default=None)):
-    require_user(council_session)
-    root = vault.vault_path()
-    if root is None:
-        return {"configured": False,
-                "help": "Set VAULT_PATH in .env to a folder of markdown notes."}
+    user = require_user(council_session)
+    uid = owner_id(user)
+    owner = uid or "__local__"
+    root = _user_vault_root(uid)
     conn = db.connect()
     try:
-        n = conn.execute("SELECT COUNT(*) c FROM vault_fts").fetchone()["c"]
+        vault.ensure_index(conn)
+        n = conn.execute("SELECT COUNT(*) c FROM vault_fts WHERE owner = ?",
+                         (owner,)).fetchone()["c"]
     except Exception:
         n = 0
     finally:
         conn.close()
-    return {"configured": True, "path": str(root), "sections": n,
-            "excluded": sorted(vault.ALWAYS_EXCLUDE)}
+    return {
+        "configured": root is not None,
+        "path": str(root) if root else (db.get_user_vault(uid) if uid else ""),
+        "sections": n,
+        "excluded": sorted(vault.ALWAYS_EXCLUDE),
+        "help": "A folder of markdown notes. Yours alone -- other accounts never see it.",
+    }
+
+
+@app.put("/api/vault")
+async def api_vault_set(request: Request, council_session: str | None = Cookie(default=None)):
+    user = require_user(council_session)
+    if not user:
+        raise HTTPException(400, "Create an account to use memory.")
+    body = await request.json()
+    raw = str(body.get("path", "")).strip()
+
+    if not raw:
+        await asyncio.to_thread(db.set_user_vault, user["id"], None)
+        conn = db.connect()
+        try:
+            vault.ensure_index(conn)
+            conn.execute("DELETE FROM vault_fts WHERE owner = ?", (user["id"],))
+            conn.commit()
+        finally:
+            conn.close()
+        return {"ok": True, "configured": False}
+
+    from pathlib import Path
+    p = Path(raw).expanduser()
+    if not p.is_dir():
+        raise HTTPException(400, f"No folder at {p}")
+    await asyncio.to_thread(db.set_user_vault, user["id"], str(p))
+    result = await asyncio.to_thread(_reindex_vault, user["id"])
+    return {"ok": True, **result}
 
 
 @app.post("/api/vault/reindex")
 async def api_vault_reindex(council_session: str | None = Cookie(default=None)):
-    require_user(council_session)
-    return await asyncio.to_thread(_reindex_vault)
+    user = require_user(council_session)
+    return await asyncio.to_thread(_reindex_vault, owner_id(user))
 
 
 @app.on_event("startup")
@@ -739,12 +792,18 @@ async def startup():
     db.init()
     # Index once at boot so the first question already has memory. Cheap for a
     # personal vault; re-run from the UI after editing notes.
-    if vault.vault_path() is not None:
-        try:
-            r = await asyncio.to_thread(_reindex_vault)
-            print(f"[vault] indexed {r.get('sections', 0)} sections from {r.get('path')}")
-        except Exception as exc:
-            print(f"[vault] index failed: {exc}")
+    try:
+        users = await asyncio.to_thread(db.all_users)
+        if users:
+            for u in users:
+                if u.get("vault_path"):
+                    r = await asyncio.to_thread(_reindex_vault, u["id"])
+                    print(f"[vault] {u['username']}: {r.get('sections', 0)} sections")
+        elif vault.vault_path() is not None:
+            r = await asyncio.to_thread(_reindex_vault, None)
+            print(f"[vault] local: {r.get('sections', 0)} sections from {r.get('path')}")
+    except Exception as exc:
+        print(f"[vault] index failed: {exc}")
 
 
 @app.exception_handler(HTTPException)

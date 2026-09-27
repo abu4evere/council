@@ -122,6 +122,14 @@ async def stream_completion(
     budget = max_tokens
     cap = get_provider(provider).token_cap
 
+    # A WALL-CLOCK CEILING, not just an attempt count. Four attempts at a 75s
+    # timeout plus backoff can hold one seat for over five minutes, during
+    # which the interface shows a stage that never changes and the run looks
+    # frozen. A stranger closes the tab and concludes it is broken. Better to
+    # give up on one seat and let the others answer.
+    started = asyncio.get_event_loop().time()
+    deadline = started + config_retry_budget()
+
     attempt = 0
     while True:
         payload["max_tokens"] = budget
@@ -161,8 +169,11 @@ async def stream_completion(
             break
         except _RateLimited as rl:
             BREAKER.record_failure(prov.key)
-            if saw_content or attempt >= 4:
-                raise ModelError(f"{prov.label}/{model}: {rl.detail}") from None
+            now = asyncio.get_event_loop().time()
+            if saw_content or attempt >= 4 or now >= deadline:
+                spent = int(now - started)
+                suffix = f" after {spent}s" if now >= deadline else ""
+                raise ModelError(f"{prov.label}/{model}: {rl.detail}{suffix}") from None
             if BREAKER.is_open(prov.key):
                 raise ModelError(
                     f"{prov.label}/{model}: {rl.detail} - provider now in cooldown"
@@ -175,6 +186,13 @@ async def stream_completion(
                 wait = rl.retry_after
             else:
                 wait = random.uniform(0, min(2 ** attempt * 3, 30))
+            # Never sleep past the deadline -- waiting 30s to then give up is
+            # the worst of both outcomes.
+            wait = min(wait, max(0.0, deadline - now))
+            if wait <= 0:
+                raise ModelError(
+                    f"{prov.label}/{model}: {rl.detail} after "
+                    f"{int(now - started)}s") from None
             attempt += 1
             await asyncio.sleep(wait)
 
@@ -200,6 +218,12 @@ async def stream_completion(
             "The endpoint answered but sent nothing usable -- usually a "
             "credential that authenticates but lacks permission for this API."
         )
+
+
+def config_retry_budget() -> float:
+    """Total seconds a single seat may spend across all its attempts."""
+    from . import config
+    return config.SEAT_RETRY_BUDGET
 
 
 class _NeedsMoreTokens(Exception):

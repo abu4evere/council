@@ -738,10 +738,43 @@ async function loadKeys() {
   }
 }
 
+async function loadVault() {
+  const st = $("#vault-status");
+  try {
+    const v = await api("/api/vault");
+    $("#vault-path").value = v.path || "";
+    st.textContent = v.configured
+      ? `${v.sections} section${v.sections === 1 ? "" : "s"} indexed`
+      : "No memory folder set.";
+    st.className = "vault-status" + (v.configured ? " ok" : "");
+  } catch (err) {
+    st.textContent = err.message;
+  }
+}
+
+$("#vault-save").addEventListener("click", async () => {
+  const btn = $("#vault-save");
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = "Indexing...";
+  try {
+    const r = await api("/api/vault", {
+      method: "PUT", body: JSON.stringify({ path: $("#vault-path").value.trim() }),
+    });
+    toast(r.configured ? `Memory indexed - ${r.sections} sections` : "Memory turned off");
+    await loadVault();
+  } catch (err) {
+    toast(err.message, 6000);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+});
+
 $("#open-keys").addEventListener("click", async () => {
   $("#keys-modal").classList.remove("hidden");
   closeSidebar();
-  await loadKeys();
+  await Promise.all([loadKeys(), loadVault()]);
 });
 $("#keys-close").addEventListener("click", () => $("#keys-modal").classList.add("hidden"));
 $("#keys-modal").addEventListener("click", (e) => {

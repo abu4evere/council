@@ -304,6 +304,13 @@ MAX_JUDGE_INPUT_CHARS = 12000
 # which is far worse than giving up on it and letting the others answer.
 REQUEST_TIMEOUT = 75.0
 
+# Total wall-clock seconds one seat may spend including every retry. Without
+# this, four attempts plus backoff could hold a single seat for over five
+# minutes while the interface showed a stage that never changed -- which reads
+# as broken, not slow. Giving up on one seat and letting the others answer is
+# the better failure.
+SEAT_RETRY_BUDGET = float(os.environ.get("SEAT_RETRY_BUDGET", "150"))
+
 # Parallelism is now a property of each provider (see providers.py), because
 # their limits differ by an order of magnitude. Groq allows 1 concurrent seat;
 # Gemini allows 3. Override any provider here, e.g. MAX_PARALLEL=groq:2,gemini:4

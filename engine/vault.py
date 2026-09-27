@@ -110,13 +110,34 @@ def scan(root: Path) -> list[Note]:
     return notes
 
 
-def build_index(conn: sqlite3.Connection, root: Path) -> int:
-    """(Re)build the search index. Returns the number of sections indexed."""
-    conn.execute("DROP TABLE IF EXISTS vault_fts")
-    conn.execute("CREATE VIRTUAL TABLE vault_fts USING fts5(path, heading, body)")
+def ensure_index(conn: sqlite3.Connection) -> None:
+    """The index carries an owner column so search can be scoped in SQL."""
+    cur = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='vault_fts'")
+    if cur.fetchone() is None:
+        conn.execute(
+            "CREATE VIRTUAL TABLE vault_fts USING fts5(owner, path, heading, body)")
+        conn.commit()
+        return
+    # An index built before per-user vaults has no owner column. Rebuilding is
+    # correct here: an unowned row would otherwise be retrievable by everyone,
+    # which is the exact leak this change exists to close.
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(vault_fts)")]
+    if "owner" not in cols:
+        conn.execute("DROP TABLE vault_fts")
+        conn.execute(
+            "CREATE VIRTUAL TABLE vault_fts USING fts5(owner, path, heading, body)")
+        conn.commit()
+
+
+def build_index(conn: sqlite3.Connection, root: Path, owner: str) -> int:
+    """(Re)build one owner's slice of the index. Others are untouched."""
+    ensure_index(conn)
+    conn.execute("DELETE FROM vault_fts WHERE owner = ?", (owner,))
     notes = scan(root)
-    conn.executemany("INSERT INTO vault_fts (path, heading, body) VALUES (?,?,?)",
-                     [(n.path, n.heading, n.body) for n in notes])
+    conn.executemany(
+        "INSERT INTO vault_fts (owner, path, heading, body) VALUES (?,?,?,?)",
+        [(owner, n.path, n.heading, n.body) for n in notes])
     conn.commit()
     return len(notes)
 
@@ -139,8 +160,8 @@ def _fts_query(question: str) -> str:
     return " OR ".join(f'"{w}"' for w in keep)
 
 
-def search(conn: sqlite3.Connection, question: str, budget_chars: int = 3000,
-           max_notes: int = 5) -> list[Note]:
+def search(conn: sqlite3.Connection, question: str, owner: str,
+           budget_chars: int = 3000, max_notes: int = 5) -> list[Note]:
     """The most relevant sections, within a hard character budget.
 
     The budget is not decoration. Groq's free tier allows 8000 tokens a minute,
@@ -148,13 +169,16 @@ def search(conn: sqlite3.Connection, question: str, budget_chars: int = 3000,
     retrieval would turn every run into a 413.
     """
     q = _fts_query(question)
-    if not q:
+    if not q or not owner:
         return []
     try:
+        # Owner is filtered in SQL, not after the fact. A forgotten filter here
+        # would hand one person's private notes to another and ship them to
+        # four AI providers.
         rows = conn.execute(
             """SELECT path, heading, body FROM vault_fts
-               WHERE vault_fts MATCH ? ORDER BY rank LIMIT ?""",
-            (q, max_notes * 3),
+               WHERE owner = ? AND vault_fts MATCH ? ORDER BY rank LIMIT ?""",
+            (owner, q, max_notes * 3),
         ).fetchall()
     except sqlite3.OperationalError:
         return []

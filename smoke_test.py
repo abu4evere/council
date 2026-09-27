@@ -347,7 +347,25 @@ async def main():
         print(f"[FAIL] escalation: doubles={has_escalation} "
               f"resets_stripper={resets_stripper} capped={respects_cap}")
 
-    # 17. Memory preamble must survive being passed through a real run.
+    # 17. A seat must not be able to hold a run open indefinitely. Observed:
+    #     one slow seat stalled a run for over five minutes (4 attempts x 75s
+    #     plus backoff) while the interface showed a stage that never changed,
+    #     which reads as broken rather than slow.
+    import inspect
+    import engine.llm as _l
+    src2 = inspect.getsource(_l.stream_completion)
+    has_deadline = "deadline" in src2 and "now >= deadline" in src2
+    clamps_sleep = "min(wait, max(0.0, deadline - now))" in src2
+    budget = config.SEAT_RETRY_BUDGET
+    worst = budget + config.REQUEST_TIMEOUT
+    if has_deadline and clamps_sleep and worst < 390:
+        print(f"[PASS] one seat is capped at ~{int(worst)}s, was up to 390s")
+    else:
+        ok = False
+        print(f"[FAIL] retry budget: deadline={has_deadline} "
+              f"clamped={clamps_sleep} worst={worst}")
+
+    # 18. Memory preamble must survive being passed through a real run.
     from engine import prompts as P
     pre = P.memory_preamble([{"user_prompt": "earlier q", "final_answer": "earlier a"}])
     if "earlier q" in pre and "earlier a" in pre and "Current question" in pre:

@@ -72,23 +72,23 @@ def main() -> int:
               {"Hard constraints", "Stack", "The plan"} <= headings, str(headings))
 
         conn = sqlite3.connect(":memory:")
-        n = vault.build_index(conn, tmp)
+        n = vault.build_index(conn, tmp, "alice")
         check("index built", n == len(notes), f"{n} vs {len(notes)}")
 
-        hits = vault.search(conn, "can I run models locally on this laptop?")
+        hits = vault.search(conn, "can I run models locally on this laptop?", "alice")
         check("retrieves the relevant section",
               any(h.heading == "Hard constraints" for h in hits),
               str([(h.path, h.heading) for h in hits]))
         check("private content never retrieved even on a keyword match",
               all(".private" not in h.path for h in hits))
 
-        hits = vault.search(conn, "habit tracker storage choice")
+        hits = vault.search(conn, "habit tracker storage choice", "alice")
         check("retrieves a different note for a different question",
               any(h.path == "projects/habits.md" for h in hits),
               str([(h.path, h.heading) for h in hits]))
 
         check("unrelated question retrieves nothing",
-              vault.search(conn, "zzzz qqqq xxxx") == [])
+              vault.search(conn, "zzzz qqqq xxxx", "alice") == [])
 
         # Budget: a vault full of long matching notes must still fit.
         big = tmp / "big"
@@ -98,11 +98,50 @@ def main() -> int:
                 f"# Note {i}\n\n## Groq limits\n" + ("groq tokens minute limit " * 200),
                 encoding="utf-8")
         conn2 = sqlite3.connect(":memory:")
-        vault.build_index(conn2, tmp)
-        hits = vault.search(conn2, "groq tokens per minute limit", budget_chars=3000)
+        vault.build_index(conn2, tmp, "alice")
+        hits = vault.search(conn2, "groq tokens per minute limit", "alice", budget_chars=3000)
         total = sum(len(h.body) for h in hits)
         check("retrieval respects the character budget", total <= 3000, f"{total} chars")
         check("budget still returns something useful", len(hits) > 0)
+
+        # --- THE ISOLATION TEST ---
+        # Two accounts, two vaults, one shared index. Bob asking a question
+        # whose keywords match Alice's notes must retrieve NOTHING of hers.
+        bob_vault = Path(tempfile.mkdtemp(prefix="council-bob-"))
+        try:
+            (bob_vault / "mine.md").write_text(
+                "# Bob\n\n## My own notes\n"
+                "Bob writes about Groq and Ollama too, on his own laptop, in his "
+                "own vault, which Alice must never be able to retrieve.\n",
+                encoding="utf-8")
+            conn3 = sqlite3.connect(":memory:")
+            vault.build_index(conn3, tmp, "alice")
+            vault.build_index(conn3, bob_vault, "bob")
+
+            a_hits = vault.search(conn3, "Ollama local models laptop RAM", "alice")
+            b_hits = vault.search(conn3, "Ollama local models laptop RAM", "bob")
+
+            check("alice still retrieves her own notes",
+                  any("council.md" in h.path for h in a_hits))
+            check("BOB NEVER RECEIVES ALICE'S NOTES",
+                  all("council.md" not in h.path and "habits.md" not in h.path
+                      for h in b_hits),
+                  str([(h.path, h.heading) for h in b_hits]))
+            check("bob retrieves his own notes",
+                  any("mine.md" in h.path for h in b_hits),
+                  str([h.path for h in b_hits]))
+            check("a user with no vault retrieves nothing",
+                  vault.search(conn3, "Ollama local models", "carol") == [])
+            check("empty owner retrieves nothing",
+                  vault.search(conn3, "Ollama local models", "") == [])
+
+            # Re-indexing one user must not disturb another's rows.
+            vault.build_index(conn3, bob_vault, "bob")
+            check("reindexing bob leaves alice's index intact",
+                  any("council.md" in h.path
+                      for h in vault.search(conn3, "Ollama local models laptop RAM", "alice")))
+        finally:
+            shutil.rmtree(bob_vault, ignore_errors=True)
 
         ctx = vault.as_context(hits)
         check("context labels notes as background, not instructions",

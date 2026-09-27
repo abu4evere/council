@@ -463,3 +463,10 @@ html, body {
   color: var(--text-faint); text-decoration: underline; text-underline-offset: 2px;
 }
 .key-link:hover { color: var(--text-dim); }
+
+/* ---------- memory settings ---------- */
+.modal-rule { border: none; border-top: 1px solid var(--border-soft); margin: 22px 0 18px; }
+.modal-h3 { font-size: 14px; font-weight: 600; }
+.vault-form { display: flex; gap: 6px; }
+.vault-status { font-size: 11.5px; color: var(--text-faint); margin-top: 7px; }
+.vault-status.ok { color: var(--ok); }

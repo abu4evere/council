@@ -96,6 +96,12 @@ def init() -> None:
         if "user_id" not in cols:
             conn.execute("ALTER TABLE conversations ADD COLUMN user_id TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_conv_user ON conversations(user_id)")
+        # Each account points at its own notes folder. Before this, one global
+        # VAULT_PATH meant a second user's questions would retrieve the FIRST
+        # user's private notes and send them to four AI providers.
+        ucols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+        if "vault_path" not in ucols:
+            conn.execute("ALTER TABLE users ADD COLUMN vault_path TEXT")
         conn.commit()
     finally:
         conn.close()
@@ -129,6 +135,32 @@ def get_user_by_name(username: str) -> dict | None:
     try:
         row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
         return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def set_user_vault(user_id: str, path: str | None) -> None:
+    conn = connect()
+    try:
+        conn.execute("UPDATE users SET vault_path = ? WHERE id = ?", (path or None, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_user_vault(user_id: str) -> str | None:
+    conn = connect()
+    try:
+        row = conn.execute("SELECT vault_path FROM users WHERE id = ?", (user_id,)).fetchone()
+        return row["vault_path"] if row else None
+    finally:
+        conn.close()
+
+
+def all_users() -> list[dict]:
+    conn = connect()
+    try:
+        return [dict(r) for r in conn.execute("SELECT id, username, vault_path FROM users")]
     finally:
         conn.close()
 
