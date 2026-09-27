@@ -1,22 +1,30 @@
 # Council
 
-Ask several AI models the same thing at once, then make them argue about it.
+Ask several AI models the same question at once, then make them argue about it.
 
-Two features, one pipeline:
+**Runs entirely on free API tiers.** No payment card, no paid model, no local GPU.
 
-- **Quick (Mixture-of-Agents)** — four models answer in parallel, each from a
-  deliberately different angle. A fifth merges them into one answer, resolving
-  contradictions instead of averaging them. ~20s.
-- **Debate** — a Drafter writes a plan, a Critic attacks it, the Drafter revises.
-  Three rounds. A Judge then extracts the verdict. ~90s.
-- **Full** — Quick, then the debate runs on the synthesised plan. ~2min.
-
-Every mode ends with a section naming the **decisions you still have to make**.
-That is the point of the tool: the hard part of planning is usually not getting
-an answer, it is knowing which questions to ask.
+Built because the hard part of planning a project usually isn't getting an
+answer -- it's knowing which questions to ask. Every mode ends by naming the
+decisions you still have to make.
 
 ---
 
+## What it does
+
+Two features, one pipeline:
+
+- **Quick (Mixture-of-Agents)** -- five models answer in parallel, each pushed
+  toward a deliberately different angle. A sixth merges them, resolving
+  contradictions rather than averaging them. ~40s.
+- **Debate** -- a Drafter writes a plan, a Critic attacks it, the Drafter
+  revises. Three rounds, then a Judge extracts the verdict. ~4min.
+- **Full** -- Quick, then the debate runs on the synthesised plan. ~7min.
+
+The models come from different vendors on purpose. Four models given the same
+prompt return four similar answers, and merging those produces mush.
+
+---
 ## Setup
 
 ```bash
@@ -196,6 +204,32 @@ discarding work you already paid for. A failed Judge returns the last revision
 of the plan. Only losing *every* proposer, or the initial draft, fails a run.
 
 ---
+
+## Why no agent framework
+
+Feature 1 is `asyncio.gather` over N calls. Feature 2 is a `for` loop over a
+growing transcript. Together that is about 300 lines. LangGraph or AutoGen
+would add an abstraction to learn and a layer to debug through, and buy nothing
+at this size. The whole app is ~4000 lines including the UI and tests.
+
+## What building this actually taught me
+
+Most of the code is failure handling, because free tiers fail constantly:
+
+- **Reasoning models return empty responses when starved of budget.** They
+  spend tokens thinking before writing a word, and the share varies by prompt,
+  not just by model. Four different families blew four different ceilings, each
+  time returning HTTP 200 with no content and no error. The client now detects
+  this and retries with a larger budget instead of guessing per model.
+- **Thinking arrives two ways** -- as separate `reasoning` deltas, or inline in
+  the content wrapped in `<thought>` tags. The inline kind leaks raw thinking
+  into the answer and into the next debate round unless stripped.
+- **A provider's model listing can include models it will not serve.**
+- **A credential can authenticate and still be wrong.** A GitHub token missing
+  the `Models` permission returns a plain-text `200 OK` that parses as an empty
+  answer -- success-shaped failure, the worst kind.
+- **One vendor's outage takes out every seat on it at once**, so decision seats
+  are spread across providers, not just across models.
 
 ## Tests
 
