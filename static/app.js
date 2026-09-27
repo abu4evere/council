@@ -183,9 +183,18 @@ function buildTurnShell(prompt, mode) {
   return turn;
 }
 
-function agentPanel(container, key, info) {
-  let existing = container.querySelector(`[data-agent="${key}"][data-round="${info.round ?? ""}"]`);
-  if (existing) return existing._parts;
+/* Find (or create) a seat's panel.
+   `isStart` must be true ONLY for agent_start. A debate seat speaks several
+   times across rounds and gets a fresh panel each round, but the chunk/done/
+   error events that follow carry no round number -- so looking a panel up by
+   round meant they never matched and silently rendered a second, unlabelled
+   panel per seat. The live one is tracked per key instead. */
+function agentPanel(container, key, info, isStart) {
+  if (!container._current) container._current = {};
+  if (!isStart) {
+    const live = container._current[key];
+    if (live) return live;
+  }
 
   const panel = el("div", "agent");
   panel.dataset.agent = key;
@@ -215,6 +224,7 @@ function agentPanel(container, key, info) {
   container.appendChild(panel);
 
   panel._parts = { panel, body, status, buffer: "" };
+  container._current[key] = panel._parts;
   return panel._parts;
 }
 
@@ -229,7 +239,7 @@ async function renderPastTurn(t) {
     const events = await api(`/api/turns/${t.id}/events?after=0`);
     for (const ev of events) {
       if (ev.type === "agent_start") {
-        const p = agentPanel(agentsBox, ev.agent, ev);
+        const p = agentPanel(agentsBox, ev.agent, ev, true);
         p.body.classList.remove("streaming");
       } else if (ev.type === "agent_done") {
         const p = agentPanel(agentsBox, ev.agent, {});
@@ -244,7 +254,7 @@ async function renderPastTurn(t) {
         p.body.textContent = ev.error || "failed";
         p.body.classList.remove("streaming");
       } else if (ev.type === "agent_skipped") {
-        const p = agentPanel(agentsBox, ev.agent, ev);
+        const p = agentPanel(agentsBox, ev.agent, ev, true);
         p.panel.classList.add("skipped");
         p.status.className = "agent-status skipped";
         p.status.textContent = "no key";
@@ -355,7 +365,7 @@ function handleEvent(ev, agentsBox, turnEl) {
       break;
 
     case "agent_start": {
-      const p = agentPanel(agentsBox, ev.agent, ev);
+      const p = agentPanel(agentsBox, ev.agent, ev, true);
       p.buffer = "";
       p.thinkBuf = "";
       if (p.thinking) { p.thinking.remove(); p.thinking = null; }
@@ -410,7 +420,7 @@ function handleEvent(ev, agentsBox, turnEl) {
 
     case "agent_skipped": {
       // Not a failure: this seat's provider simply has no key configured.
-      const p = agentPanel(agentsBox, ev.agent, ev);
+      const p = agentPanel(agentsBox, ev.agent, ev, true);
       p.panel.classList.add("skipped");
       p.status.className = "agent-status skipped";
       p.status.textContent = "no key";
