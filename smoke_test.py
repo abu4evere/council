@@ -271,7 +271,32 @@ async def main():
         ok = False
         print(f"[FAIL] breaker recovery: open={was_open} probe={probe_allowed}")
 
-    # 13. Memory preamble must survive being passed through a real run.
+    # 13. A failing Critic must not collapse the debate. Observed live: the
+    #     round-1 Critic errored, the loop broke, and rounds 2 and 3 never ran
+    #     -- the Judge then ruled on a completely unchallenged draft.
+    global FAIL_ROLES
+    result, events = await run_mode("debate", fail_roles={"critic"})
+    rounds_seen = {a for t, a in events if t == "agent_start"}
+    judged = any(a == config.DEBATE_JUDGE.key for t, a in events if t == "agent_done")
+    retried = any("retrying round" in str(p) for p, _ in [(e, None) for e in events])
+    if result and judged:
+        print("[PASS] critic failure -> debate degrades but still reaches a verdict")
+    else:
+        ok = False
+        print(f"[FAIL] critic failure -> judged={judged} result={bool(result)}")
+
+    # 14. Token budgets must be clamped per provider, never global. Sizing
+    #     everything to Groq's 8000 tok/min starved the reasoning models on
+    #     other providers, which then returned empty responses with no error.
+    groq_cap = config.tokens_for("groq", config.MAX_TOKENS_PROPOSER)
+    gem_cap = config.tokens_for("gemini", config.MAX_TOKENS_PROPOSER)
+    if groq_cap < config.MAX_TOKENS_PROPOSER and gem_cap > groq_cap:
+        print(f"[PASS] token budgets clamp per provider (groq {groq_cap} < gemini {gem_cap})")
+    else:
+        ok = False
+        print(f"[FAIL] token caps not per-provider: groq={groq_cap} gemini={gem_cap}")
+
+    # 15. Memory preamble must survive being passed through a real run.
     from engine import prompts as P
     pre = P.memory_preamble([{"user_prompt": "earlier q", "final_answer": "earlier a"}])
     if "earlier q" in pre and "earlier a" in pre and "Current question" in pre:

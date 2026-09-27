@@ -115,34 +115,43 @@ DEBATE_JUDGE = Agent(key="judge", label="Judge",
                      provider="gemini", model="gemini-3.8-flash", color="#d4a02c")
 
 
-def resolve_seat(agent: Agent, avoid: set[str] | None = None) -> Agent | None:
+def resolve_seat(agent: Agent, avoid: set[str] | None = None,
+                 avoid_providers: set[str] | None = None) -> Agent | None:
     """Return the seat, or an equivalent on a provider that IS configured.
 
-    Single-seat roles (Aggregator, Critic, Judge...) cannot simply be skipped
-    the way a proposer can -- losing them loses the run. So when their provider
-    has no key, they borrow a configured proposer's provider and model.
+    Two kinds of diversity, and they are not the same thing:
 
-    `avoid` carries the models already assigned to neighbouring seats. Falling
-    back is where the diversity rule quietly dies: with one provider configured,
-    a naive fallback hands Drafter, Critic and Judge the SAME model, and the
-    debate silently becomes one model arguing with itself. So we prefer any
-    available model not already taken, and only reuse one when there is no
-    alternative left.
+    * `avoid` (models) is about QUALITY. A model attacking or judging its own
+      output shares the blind spots that produced the flaw.
+    * `avoid_providers` is about RESILIENCE. Observed live: Google AI Studio
+      started returning 503 and took out Synthesis, the Critic's replacement
+      AND the Judge in one go, because all three sat on Gemini. Two different
+      Gemini models are different voices but they fail together.
+
+    Models are the stronger constraint, so a fresh model on a used provider
+    beats a reused model on a fresh one. Provider spread is the tie-breaker.
     """
     avoid = avoid or set()
+    avoid_providers = avoid_providers or set()
 
-    # Take the seat's own model only if it does not clash with a seat already
-    # assigned. Returning it unconditionally here was a bug: an available seat
-    # short-circuited past the diversity check, so in Full mode the Drafter
-    # happily revised a plan its own model had just written.
-    if agent.available() and agent.model not in avoid:
+    if (agent.available() and agent.model not in avoid
+            and agent.provider not in avoid_providers):
         return agent
+
     candidates = voice_pool()
     if not candidates:
         return None
 
     fresh = [c for c in candidates if c[1] not in avoid]
-    provider, model = (fresh or candidates)[0]
+    if fresh:
+        # Prefer one that is also on an unused provider.
+        best = [c for c in fresh if c[0] not in avoid_providers]
+        provider, model = (best or fresh)[0]
+    elif agent.available() and agent.model not in avoid:
+        return agent
+    else:
+        provider, model = candidates[0]
+
     return Agent(key=agent.key, label=agent.label, provider=provider,
                  model=model, framing=agent.framing, color=agent.color)
 
@@ -253,10 +262,20 @@ DEBATE_ROUNDS = 3          # critic->drafter cycles. 3 is the sweet spot; past 4
 # write a word, and that thinking counts against these budgets. Sized for
 # roughly 2-3x the visible answer so the reasoning never squeezes it out. If a
 # seat errors with "spent its entire budget on reasoning", raise its number.
-MAX_TOKENS_PROPOSER = 2000
-MAX_TOKENS_SYNTHESIS = 3000
-MAX_TOKENS_CRITIC = 2000
-MAX_TOKENS_JUDGE = 2500
+# Role budgets, BEFORE each provider's own cap is applied (see tokens_for()).
+# Sized for reasoning models, which spend a large share of the budget thinking
+# before producing a word -- too small and they return an empty response with
+# no error at all.
+MAX_TOKENS_PROPOSER = 5000
+MAX_TOKENS_SYNTHESIS = 7000
+MAX_TOKENS_CRITIC = 5000
+MAX_TOKENS_JUDGE = 6000
+
+
+def tokens_for(provider: str, role_budget: int) -> int:
+    """Clamp a role's token budget to what this provider can actually take."""
+    return min(role_budget, get_provider(provider).token_cap)
+
 
 # Hard ceiling on the Judge's INPUT. The debate transcript grows every round; on
 # an 8000 tokens/minute tier an unbounded transcript gets the Judge call

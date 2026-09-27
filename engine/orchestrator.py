@@ -39,6 +39,10 @@ class Orchestrator:
         # synthesis -> debate, so without this the Drafter can end up revising
         # a plan its own model just wrote.
         self._used_models: set[str] = set()
+        # Providers already used for a decision seat. Model diversity protects
+        # answer quality; provider diversity protects against one vendor's
+        # outage taking out the whole decision layer at once.
+        self._used_providers: set[str] = set()
 
     def _gate(self, provider: str) -> asyncio.Semaphore:
         """One semaphore per provider, sized by that provider's own limit."""
@@ -58,9 +62,10 @@ class Orchestrator:
             # text that gets fed to the next seat in the debate.
             await self.emit("agent_reasoning", agent.key, {"text": text})
 
+        capped = config.tokens_for(agent.provider, max_tokens)
         async with self._gate(agent.provider):
             async for chunk in stream_completion(
-                client, agent.model, system, user, max_tokens,
+                client, agent.model, system, user, capped,
                 temperature=temperature, provider=agent.provider,
                 timeout=config.REQUEST_TIMEOUT, on_reasoning=on_reasoning,
             ):
@@ -128,9 +133,11 @@ class Orchestrator:
                              "label": "only one model answered - using it directly"})
             return good[0][1]
 
-        agg = config.resolve_seat(config.AGGREGATOR, avoid=self._used_models)
+        agg = config.resolve_seat(config.AGGREGATOR, avoid=self._used_models,
+                                  avoid_providers=self._used_providers)
         if agg:
             self._used_models.add(agg.model)
+            self._used_providers.add(agg.provider)
         blocks = "\n\n".join(
             f"### Advisor {i}: {a.label}\n{t}" for i, (a, t) in enumerate(good, 1)
         )
@@ -170,12 +177,16 @@ class Orchestrator:
         # can rather than one model debating itself.
         drafter = config.resolve_seat(config.DEBATE_ARCHITECT, avoid=self._used_models)
         taken = set(self._used_models)
+        provs = {drafter.provider} if drafter else set()
         if drafter:
             taken.add(drafter.model)
-        critic = config.resolve_seat(config.DEBATE_CRITIC, avoid=taken)
+        critic = config.resolve_seat(config.DEBATE_CRITIC, avoid=taken,
+                                     avoid_providers=provs)
         if critic:
             taken.add(critic.model)
-        judge = config.resolve_seat(config.DEBATE_JUDGE, avoid=taken)
+            provs.add(critic.provider)
+        judge = config.resolve_seat(config.DEBATE_JUDGE, avoid=taken,
+                                    avoid_providers=provs)
         self._used_models = taken | ({judge.model} if judge else set())
         if drafter is None:
             raise NotConfigured(config.missing_key_help())
@@ -211,10 +222,31 @@ class Orchestrator:
                     critique = await self._stream(client, critic, prompts.DEBATE_CRITIC,
                                                   crit_user, config.MAX_TOKENS_CRITIC, 0.8)
                 except ModelError as exc:
-                    # Losing a round degrades quality but must not lose the plan
-                    # we already have -- stop and let the Judge work with it.
                     await self.emit("agent_error", critic.key, {"error": str(exc)})
-                    break
+                    # One bad Critic used to end the whole debate: a round-1
+                    # failure skipped rounds 2 and 3 entirely and the Judge got
+                    # an unchallenged draft. Try a different model once before
+                    # giving up -- the usual cause is this model, not the plan.
+                    replacement = config.resolve_seat(
+                        config.DEBATE_CRITIC,
+                        avoid={critic.model, drafter.model},
+                        avoid_providers={critic.provider},
+                    )
+                    if replacement is None or replacement.model == critic.model:
+                        break
+                    await self.emit("stage", None,
+                                    {"stage": "critique",
+                                     "label": f"critic failed - retrying round {rnd} "
+                                              f"with {replacement.model}"})
+                    critic = replacement
+                    await self._announce(critic, "critic", rnd)
+                    try:
+                        critique = await self._stream(
+                            client, critic, prompts.DEBATE_CRITIC, crit_user,
+                            config.MAX_TOKENS_CRITIC, 0.8)
+                    except ModelError as exc2:
+                        await self.emit("agent_error", critic.key, {"error": str(exc2)})
+                        break
                 await self.emit("agent_done", critic.key, {"text": critique})
                 transcript.append(f"CRITIC (round {rnd}):\n{critique}")
 

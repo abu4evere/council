@@ -34,6 +34,12 @@ class Provider:
     # key, seats are spread across that provider's different models rather than
     # all collapsing onto one. Verified entries only -- check_key.py validates.
     alternates: tuple[str, ...] = ()
+    # Hard ceiling on max_tokens for THIS provider. Budgets have to be per
+    # provider, not global: Groq's 8000 tokens/minute forces small requests,
+    # while Gemini and Cerebras have their own, far larger buckets. Sizing
+    # everything to the tightest provider starved the reasoning models on the
+    # others, which then returned nothing at all.
+    token_cap: int = 8000
 
     def api_key(self) -> str | None:
         if self.env_var is None:
@@ -57,6 +63,10 @@ PROVIDERS: dict[str, Provider] = {
         # Verified live 2026-09-27. The rest of Groq's catalogue is speech and
         # safety classifiers, not chat models.
         alternates=("openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"),
+        # 8000 TPM total, and seats here run one at a time, so a single request
+        # can use most of the window -- but not all of it, since the input
+        # counts too and a 413 is unrecoverable.
+        token_cap=3500,
     ),
     "gemini": Provider(
         key="gemini",
@@ -71,6 +81,7 @@ PROVIDERS: dict[str, Provider] = {
         # and the pro models 429 immediately on the free quota.
         alternates=("gemini-3.8-flash", "gemini-3.5-flash", "gemini-flash-latest",
                     "gemini-3-flash-preview", "gemini-3.1-flash-lite"),
+        token_cap=8000,
     ),
     "cerebras": Provider(
         key="cerebras",
@@ -83,6 +94,9 @@ PROVIDERS: dict[str, Provider] = {
               "than a genuinely different voice.",
         max_parallel=2,
         alternates=("gpt-oss-120b", "qwen-3.8-27b"),  # verified live 2026-09-27
+        # Both of its models are reasoning models that burn tokens thinking
+        # before they write anything. Starve them and they return empty.
+        token_cap=8000,
     ),
     "github": Provider(
         key="github",

@@ -138,6 +138,12 @@ async def stream_completion(
             attempt += 1
             await asyncio.sleep(wait)
 
+    # NEVER return empty silently. A caller that receives "" has no way to tell
+    # a broken provider from a legitimately empty answer, and an empty plan
+    # propagates into the next debate round as though it were real. Observed:
+    # a GitHub token missing the Models permission returns a plain-text
+    # "200 OK" with no SSE frames at all -- no content, no reasoning, no
+    # finish_reason -- which sailed straight through the old checks.
     if not saw_content:
         if saw_reasoning:
             raise ModelError(
@@ -150,6 +156,11 @@ async def stream_completion(
                 f"{prov.label}/{model}: hit the {max_tokens}-token limit "
                 "before producing any answer."
             )
+        raise ModelError(
+            f"{prov.label}/{model}: returned no content and gave no reason. "
+            "The endpoint answered but sent nothing usable -- usually a "
+            "credential that authenticates but lacks permission for this API."
+        )
 
 
 class _RateLimited(Exception):
