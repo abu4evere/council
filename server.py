@@ -45,6 +45,7 @@ class RunBus:
         self.seq = 0
         self.listeners: set[asyncio.Queue] = set()
         self.finished = False
+        self.task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
 
     async def emit(self, etype: str, agent: str | None, payload: dict) -> None:
@@ -93,6 +94,14 @@ async def execute_turn(turn_id: str, conversation_id: str, mode: str, question: 
         answer = await orch.run(mode, question)
         await asyncio.to_thread(db.finish_turn, turn_id, answer, None)
         await bus.emit("done", None, {"final_answer": answer})
+    except asyncio.CancelledError:
+        # The user stopped it. Not an error -- record it plainly and let the UI
+        # show a stopped run rather than a failed one.
+        await asyncio.to_thread(db.finish_turn, turn_id, None, "stopped by user")
+        await bus.emit("failed", None, {"error": "stopped by user"})
+        bus.finished = True
+        BUSES.pop(turn_id, None)
+        raise
     except Exception as exc:  # surface the failure to the UI rather than hanging
         msg = str(exc) or repr(exc)
         await asyncio.to_thread(db.finish_turn, turn_id, None, msg)
@@ -255,9 +264,26 @@ async def api_create_turn(
         title = question[:60] + ("..." if len(question) > 60 else "")
         await asyncio.to_thread(db.rename_conversation, cid, title)
 
-    BUSES[turn_id] = RunBus(turn_id)
-    asyncio.create_task(execute_turn(turn_id, cid, mode, question))
+    bus = RunBus(turn_id)
+    BUSES[turn_id] = bus
+    bus.task = asyncio.create_task(execute_turn(turn_id, cid, mode, question))
     return {"turn_id": turn_id}
+
+
+@app.post("/api/turns/{turn_id}/cancel")
+async def api_cancel_turn(turn_id: str, council_session: str | None = Cookie(default=None)):
+    """Stop a running turn.
+
+    A Full run is 12+ calls and can take seven minutes. Without this the only
+    way to abandon a run you regret is to close the tab and let it keep
+    spending rate limit in the background.
+    """
+    check_auth(council_session)
+    bus = BUSES.get(turn_id)
+    if bus is None or bus.task is None or bus.task.done():
+        return {"ok": False, "reason": "not running"}
+    bus.task.cancel()
+    return {"ok": True}
 
 
 @app.get("/api/turns/{turn_id}/stream")

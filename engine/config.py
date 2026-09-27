@@ -122,8 +122,14 @@ DEBATE_CRITIC = Agent(key="critic", label="Critic",
 # The Judge reads the final plan plus every critique -- the single largest input
 # in the system, and the seat that failed with HTTP 413 on Groq's 8000 tok/min
 # tier. Gemini's ceiling is what makes Debate mode reliable.
+# The Judge reads the final plan plus every critique -- the largest input in
+# the system. qwen sat here and failed repeatedly: it is the heaviest reasoner
+# in the roster, and on the largest prompt it spent even an escalated budget
+# thinking and never wrote a verdict. A seat's model has to suit the SHAPE of
+# its job, not just be a distinct voice.
 DEBATE_JUDGE = Agent(key="judge", label="Judge",
-                     provider="cerebras", model="qwen-3.8-27b", color="#d4a02c")
+                     provider="nvidia", model="nvidia/nemotron-3-super-120b-a12b",
+                     color="#d4a02c")
 
 
 def resolve_seat(agent: Agent, avoid: set[str] | None = None,

@@ -179,7 +179,7 @@ function buildTurnShell(prompt, mode) {
   user.appendChild(el("span", "tag", mode === "moa" ? "Quick" : mode === "debate" ? "Debate" : "Full"));
   user.appendChild(document.createTextNode(prompt));
   turn.appendChild(user);
-  turn.appendChild(el("div", "agents"));
+  turn.appendChild(el("div", "agents-wrap"));
   return turn;
 }
 
@@ -189,10 +189,25 @@ function buildTurnShell(prompt, mode) {
    error events that follow carry no round number -- so looking a panel up by
    round meant they never matched and silently rendered a second, unlabelled
    panel per seat. The live one is tracked per key instead. */
+function groupFor(agentsBox, role) {
+  // Only the parallel proposers are compared side by side. The aggregator is
+  // a single step that reads all of them, so it belongs full width underneath,
+  // not as another cell competing with its own inputs.
+  const fan = role === "proposer";
+  const cls = fan ? "agents fan" : "agents seq";
+  let last = agentsBox.lastElementChild;
+  if (!last || last.className !== cls) {
+    last = el("div", cls);
+    agentsBox.appendChild(last);
+  }
+  return last;
+}
+
 function agentPanel(container, key, info, isStart) {
-  if (!container._current) container._current = {};
+  const box = container.closest(".agents-wrap") || container;
+  if (!box._current) box._current = {};
   if (!isStart) {
-    const live = container._current[key];
+    const live = box._current[key];
     if (live) return live;
   }
 
@@ -224,7 +239,7 @@ function agentPanel(container, key, info, isStart) {
   container.appendChild(panel);
 
   panel._parts = { panel, body, status, buffer: "" };
-  container._current[key] = panel._parts;
+  box._current[key] = panel._parts;
   return panel._parts;
 }
 
@@ -232,14 +247,14 @@ async function renderPastTurn(t) {
   const thread = $("#thread");
   const turn = buildTurnShell(t.user_prompt, t.mode);
   thread.appendChild(turn);
-  const agentsBox = turn.querySelector(".agents");
+  const agentsBox = turn.querySelector(".agents-wrap");
 
   // Rebuild the agent panels from the stored event log, collapsed.
   try {
     const events = await api(`/api/turns/${t.id}/events?after=0`);
     for (const ev of events) {
       if (ev.type === "agent_start") {
-        const p = agentPanel(agentsBox, ev.agent, ev, true);
+          const p = agentPanel(agentsBox, ev.agent, ev, true);
         p.body.classList.remove("streaming");
       } else if (ev.type === "agent_done") {
         const p = agentPanel(agentsBox, ev.agent, {});
@@ -254,7 +269,7 @@ async function renderPastTurn(t) {
         p.body.textContent = ev.error || "failed";
         p.body.classList.remove("streaming");
       } else if (ev.type === "agent_skipped") {
-        const p = agentPanel(agentsBox, ev.agent, ev, true);
+        const p = agentPanel(groupFor(agentsBox, "proposer"), ev.agent, ev, true);
         p.panel.classList.add("skipped");
         p.status.className = "agent-status skipped";
         p.status.textContent = "no key";
@@ -293,10 +308,30 @@ function finalBlock(text) {
   return box;
 }
 
+let _timer = null, _startedAt = 0;
+
+function startTimer() {
+  _startedAt = Date.now();
+  clearInterval(_timer);
+  const tick = () => {
+    const s = Math.floor((Date.now() - _startedAt) / 1000);
+    const el = $("#elapsed");
+    // Elapsed time, never an estimate of time remaining. A Full run is 12+
+    // calls whose length nobody can predict, and a wrong "2 min left" is worse
+    // than no number at all.
+    if (el) el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+  tick();
+  _timer = setInterval(tick, 1000);
+}
+
+function stopTimer() { clearInterval(_timer); _timer = null; }
+
 function setStage(text) {
-  if (!text) { $("#stage-banner").classList.add("hidden"); return; }
+  const banner = $("#stage-banner");
+  if (!text) { banner.classList.add("hidden"); stopTimer(); return; }
   $("#stage-text").textContent = text;
-  $("#stage-banner").classList.remove("hidden");
+  banner.classList.remove("hidden");
 }
 
 function scrollDown() {
@@ -315,7 +350,8 @@ function attachStream(turnId, turnEl) {
   state.running = true;
   $("#send").disabled = true;
 
-  const agentsBox = turnEl.querySelector(".agents");
+  const agentsBox = turnEl.querySelector(".agents-wrap");
+  startTimer();
   let retries = 0;
 
   const open = () => {
@@ -333,6 +369,7 @@ function attachStream(turnId, turnEl) {
         es.close();
         state.stream = null;
         state.running = false;
+        state.turnId = null;
         $("#send").disabled = false;
         setStage(null);
       }
@@ -365,7 +402,7 @@ function handleEvent(ev, agentsBox, turnEl) {
       break;
 
     case "agent_start": {
-      const p = agentPanel(agentsBox, ev.agent, ev, true);
+      const p = agentPanel(groupFor(agentsBox, ev.role), ev.agent, ev, true);
       p.buffer = "";
       p.thinkBuf = "";
       if (p.thinking) { p.thinking.remove(); p.thinking = null; }
@@ -393,6 +430,9 @@ function handleEvent(ev, agentsBox, turnEl) {
       const p = agentPanel(agentsBox, ev.agent, {});
       if (p.thinking) { p.thinking.remove(); p.thinking = null; }
       p.buffer += ev.text;
+      // A character count is honest progress. A percentage bar would need a
+      // total nobody knows, so it would be a lie that looks precise.
+      p.status.textContent = `${p.buffer.length.toLocaleString()} chars`;
       // Plain text while streaming (cheap), markdown once complete.
       p.body.textContent = p.buffer;
       p.body.scrollTop = p.body.scrollHeight;
@@ -404,7 +444,7 @@ function handleEvent(ev, agentsBox, turnEl) {
       p.buffer = ev.text || p.buffer;
       p.body.innerHTML = md(p.buffer);
       p.status.className = "agent-status done";
-      p.status.textContent = "done";
+      p.status.textContent = `${p.buffer.length.toLocaleString()} chars`;
       p.body.classList.remove("streaming");
       break;
     }
@@ -420,7 +460,7 @@ function handleEvent(ev, agentsBox, turnEl) {
 
     case "agent_skipped": {
       // Not a failure: this seat's provider simply has no key configured.
-      const p = agentPanel(agentsBox, ev.agent, ev, true);
+      const p = agentPanel(groupFor(agentsBox, "proposer"), ev.agent, ev, true);
       p.panel.classList.add("skipped");
       p.status.className = "agent-status skipped";
       p.status.textContent = "no key";
@@ -476,6 +516,16 @@ async function send() {
 
 /* ---------------- wiring ---------------- */
 $("#send").addEventListener("click", send);
+
+$("#stop").addEventListener("click", async () => {
+  if (!state.turnId) return;
+  try {
+    const r = await api(`/api/turns/${state.turnId}/cancel`, { method: "POST" });
+    toast(r.ok ? "Stopping..." : "That run already finished");
+  } catch (err) {
+    toast(err.message);
+  }
+});
 
 $("#prompt").addEventListener("keydown", (e) => {
   // Enter sends on desktop; on a phone Enter should insert a newline instead.

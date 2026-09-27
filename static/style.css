@@ -290,3 +290,35 @@ html, body {
   font-style: italic; border-top: 1px solid var(--border-soft);
   max-height: 72px; overflow: hidden; line-height: 1.45;
 }
+
+
+/* ---------- run status: elapsed time and stop ---------- */
+.elapsed {
+  font-variant-numeric: tabular-nums; color: var(--text-faint);
+  font-size: 11.5px; padding-left: 2px;
+}
+.stop-btn {
+  background: none; border: 1px solid var(--border); color: var(--text-faint);
+  border-radius: 20px; font: inherit; font-size: 11px; padding: 1px 9px;
+  cursor: pointer; margin-left: 2px;
+}
+.stop-btn:hover { color: var(--err); border-color: var(--err); }
+
+/* ---------- desktop: see all the proposers at once ----------
+   Stacked vertically, five streaming panels push the composer off screen and
+   you cannot compare them -- which is the entire point of running five. On a
+   wide screen they go side by side; on a phone they stay stacked, because
+   five columns on a 375px screen is unreadable. */
+.agents-wrap { display: flex; flex-direction: column; gap: 9px; margin-bottom: 16px; }
+
+@media (min-width: 900px) {
+  .agents.fan {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 9px;
+    align-items: start;
+  }
+  .agents.fan .agent-body { max-height: 240px; }
+  .agents.fan .agent-model { display: block; margin-top: 2px; }
+  .agents.fan .agent-head { flex-wrap: wrap; row-gap: 2px; }
+}
