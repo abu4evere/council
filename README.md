@@ -1,0 +1,212 @@
+# Council
+
+Ask several AI models the same thing at once, then make them argue about it.
+
+Two features, one pipeline:
+
+- **Quick (Mixture-of-Agents)** — four models answer in parallel, each from a
+  deliberately different angle. A fifth merges them into one answer, resolving
+  contradictions instead of averaging them. ~20s.
+- **Debate** — a Drafter writes a plan, a Critic attacks it, the Drafter revises.
+  Three rounds. A Judge then extracts the verdict. ~90s.
+- **Full** — Quick, then the debate runs on the synthesised plan. ~2min.
+
+Every mode ends with a section naming the **decisions you still have to make**.
+That is the point of the tool: the hard part of planning is usually not getting
+an answer, it is knowing which questions to ask.
+
+---
+
+## Setup
+
+```bash
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+Council runs on **free API tiers**. None of these need a payment card, and you
+do not need all of them -- Council uses whatever keys it finds and skips the
+rest. One key works; three or four is much better, because the entire value of
+the synthesis comes from the answers being genuinely different.
+
+| Provider | Key | Sign up |
+|---|---|---|
+| **Groq** (start here) | `GROQ_API_KEY` | <https://console.groq.com/keys> |
+| **Google AI Studio** | `GEMINI_API_KEY` | <https://aistudio.google.com/apikey> |
+| **Cerebras** | `CEREBRAS_API_KEY` | <https://cloud.cerebras.ai> |
+| **GitHub Models** | `GITHUB_TOKEN` | <https://github.com/settings/tokens> - fine-grained, **must grant the `Models` permission** |
+| **Mistral** | `MISTRAL_API_KEY` | <https://console.mistral.ai> (phone verification) |
+
+**Verified live 2026-09-27**, because model names go stale fast:
+
+- **Groq**: `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`. The
+  rest of its catalogue is speech and safety classifiers, not chat models.
+- **Gemini**: the 2.x line is retired for new accounts. Working: `gemini-3.8-flash`,
+  `gemini-3.5-flash`, `gemini-flash-latest`. The `pro` models 429 immediately on
+  the free quota. Google lists models as `models/x` but accepts bare `x`.
+- **Cerebras**: only `gpt-oss-120b` and `qwen-3.8-27b` -- the *same families*
+  Groq offers. It buys a separate rate-limit bucket, not a different voice.
+- **GitHub Models**: a token without the `Models` permission returns a
+  plain-text `200 OK` instead of a completion, which looks like success.
+
+Put the keys in `.env`, then check everything before starting:
+
+```bash
+python check_key.py
+```
+
+That prints which providers are configured and validates every model slug
+against its provider's live catalogue -- without ever printing a key. Fix
+anything it flags, then run:
+
+```bash
+python -m uvicorn server:app --host 0.0.0.0 --port 8000
+```
+
+Open <http://localhost:8000>.
+
+## Using it from your phone
+
+`--host 0.0.0.0` is what makes this possible — without it the server only
+accepts connections from the machine it runs on.
+
+**Same Wi-Fi (easiest).** Find this machine's LAN address:
+
+```bash
+ipconfig
+```
+
+Look for `IPv4 Address` (something like `192.168.1.x`), then open
+`http://192.168.1.x:8000` on your phone. Both devices must be on the same
+network. Windows Firewall will probably prompt the first time — allow it for
+private networks.
+
+**From anywhere.** Use a tunnel:
+
+```bash
+cloudflared tunnel --url http://localhost:8000
+```
+
+That prints a public HTTPS URL. **Set `COUNCIL_PASSWORD` in `.env` before you do
+this** — otherwise anyone who finds the URL is spending your OpenRouter credit.
+
+Either way the PC has to stay awake and running the server. If you want it
+available with the PC off, deploy it instead (any host that runs Python and
+gives you a persistent disk for `council.db`).
+
+The conversation lives on the server, so phone and desktop see the same history.
+Pick up on your phone exactly where you left off on the desktop.
+
+---
+
+## Changing the models
+
+Two files. `engine/providers.py` lists the providers (base URL + which env var
+holds the key). `engine/config.py` assigns each seat a provider and a model:
+
+```python
+Agent(key="pragmatist", label="Pragmatist",
+      provider="groq", model="llama-3.3-70b-versatile", ...)
+```
+
+Every provider speaks the OpenAI-compatible protocol, so adding a new one is a
+few lines in `providers.py` and nothing else.
+
+**Model slugs go stale.** Providers rename and retire models constantly. If a
+run fails with "model slug probably wrong", run `python check_key.py` -- it
+names the bad seat. To see what a provider currently offers:
+
+```bash
+curl "http://localhost:8000/api/models?provider=groq"
+```
+
+The **framings** matter more than the model choice. Four models given an
+identical prompt return four similar answers, and merging those produces mush.
+Each proposer is pushed toward a different angle on purpose, and the four sit on
+four *different vendors* for the same reason. If you change the roster, keep
+them in conflict.
+
+Other tunables: `DEBATE_ROUNDS` (3 -- past 4 the Drafter starts agreeing with
+everything), token ceilings, `MEMORY_TURNS`, and `MAX_PARALLEL_PER_PROVIDER`.
+
+## Cost and limits
+
+Money: none. Every provider in the default roster has a free tier.
+
+What you pay instead is **rate limits**. A Quick run is 5 calls, Debate is 8,
+Full is 12 -- and free tiers cap requests per minute and per day. Spreading the
+four proposers across four different providers is what makes the parallel
+fan-out work at all; four seats on one provider would trip its per-minute limit
+immediately.
+
+Groq's free tier is **8,000 tokens per minute** and 1,000 requests per day. The
+per-minute token cap is the binding constraint, not the request count -- which
+is why seats sharing a provider run one at a time by default, and why the token
+budgets in `config.py` are sized the way they are. A Quick run takes about 20
+seconds under that limit.
+
+A 429 is retried automatically (up to 3 times, honouring `Retry-After`) as long
+as the seat has not already started streaming. If it still fails, that seat
+reports the error and the others carry on.
+
+**Reasoning models need headroom.** `openai/gpt-oss-*` stream their chain of
+thought before the answer, and those tokens count against `max_tokens`. Too
+small a budget produces an empty response with no error at all -- so the client
+detects that case and raises a message telling you to raise the budget. The
+reasoning itself is streamed to the UI and shown dimmed while a seat thinks.
+
+## Architecture
+
+```
+static/          the UI: one HTML page, no build step, no framework
+server.py        FastAPI: conversations, turns, SSE streaming
+db.py            SQLite: conversations, turns, and an append-only event log
+check_key.py     preflight: which providers work, which slugs are stale
+engine/
+  config.py      the roster and tunables   <- start here
+  prompts.py     the personas              <- and here
+  providers.py   free providers and their base URLs
+  orchestrator.py  fan-out/fan-in, and the debate loop
+  llm.py         provider-agnostic streaming client
+```
+
+**No agent framework.** Feature 1 is `asyncio.gather` over N calls; feature 2 is
+a `for` loop over a growing transcript. LangGraph or AutoGen would add an
+abstraction to learn and a layer to debug through, and buy nothing at this size.
+
+**One client, many providers.** Everything speaks OpenAI-compatible chat
+completions, so `engine/llm.py` handles all of them and only the base URL and
+auth header change. Seats whose provider has no key are skipped, not failed.
+
+**Every event is persisted with a sequence number.** The UI streams live over
+SSE but the database is the record. A client that drops off — phone locking,
+Wi-Fi to cellular, tab backgrounded — reconnects with `?after=<last seq>` and
+replays only what it missed. Nothing is lost and nothing arrives twice.
+
+**Free tiers fail constantly, so failure handling is most of the work.**
+429 (rate limited), 5xx (provider overloaded -- Gemini does this often),
+timeouts and DNS blips are all retried up to 4 times with backoff, honouring
+`Retry-After`. A retry only happens before the seat has streamed anything,
+since the stream cannot be rewound. 413 is NOT retried: a request too large
+never becomes small by waiting.
+
+**Partial failures degrade, they don't cascade.** One dead proposer leaves the
+other three. A failed Aggregator returns the raw proposer answers rather than
+discarding work you already paid for. A failed Judge returns the last revision
+of the plan. Only losing *every* proposer, or the initial draft, fails a run.
+
+---
+
+## Tests
+
+Both run offline against a fake model and cost nothing:
+
+```bash
+python smoke_test.py    # the engine: all modes, and every partial-failure path
+python test_server.py   # HTTP, SSE, persistence, reconnect replay, memory
+```
+
+Run them after touching the orchestrator or the event bus. The event-ordering
+bug they caught — concurrent emits overtaking each other and getting silently
+discarded by the subscriber's dedupe — is invisible until you look for missing
+sequence numbers.

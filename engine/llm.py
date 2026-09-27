@@ -1,0 +1,274 @@
+"""Provider-agnostic streaming client.
+
+Every provider in providers.py speaks OpenAI-compatible chat completions, so
+this one module talks to all of them. An Agent carries its provider; the only
+per-provider differences are the base URL and the auth header.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+from typing import AsyncIterator
+
+import httpx
+
+from .providers import Provider, get as get_provider
+
+
+class ModelError(Exception):
+    """A single model failed. Callers decide whether that kills the run."""
+
+
+class NotConfigured(ModelError):
+    """This seat's provider has no API key set. Skip the seat, don't fail the run."""
+
+
+def _headers(provider: Provider) -> dict:
+    h = {"Content-Type": "application/json"}
+    key = provider.api_key()
+    if key:
+        h["Authorization"] = f"Bearer {key}"
+    if provider.key == "openrouter":
+        # OpenRouter uses these for its dashboard. Harmless, optional.
+        h["HTTP-Referer"] = "http://localhost:8000"
+        h["X-Title"] = os.environ.get("APP_NAME", "council")
+    return h
+
+
+async def stream_completion(
+    client: httpx.AsyncClient,
+    model: str,
+    system: str,
+    user: str,
+    max_tokens: int,
+    temperature: float = 0.7,
+    provider: str = "openrouter",
+    timeout: float = 180.0,
+    on_reasoning=None,
+) -> AsyncIterator[str]:
+    """Yield answer text as the model produces it.
+
+    REASONING MODELS. Some models (Groq's openai/gpt-oss-*, and others) stream
+    their private chain of thought as `reasoning` deltas BEFORE any `content`.
+    Two consequences, both of which bit us:
+
+      1. Those tokens count against max_tokens. Too small a budget is spent
+         entirely on thinking and the answer comes back EMPTY -- with a 200 and
+         no error. If that happens we raise, rather than return "".
+      2. The reasoning is worth surfacing. Pass `on_reasoning` (an async
+         callable taking a str) to receive it; it is never mixed into the
+         yielded answer text.
+
+    Raises NotConfigured when the provider has no key (caller should skip the
+    seat), or ModelError for anything else that means no usable text.
+    """
+    prov = get_provider(provider)
+    if prov.env_var and not prov.api_key():
+        raise NotConfigured(
+            f"{prov.label} has no API key -- set {prov.env_var} in .env "
+            f"(free key: {prov.signup})"
+        )
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "stream": True,
+    }
+
+    saw_content = False
+    saw_reasoning = False
+    finish = None
+
+    # Free tiers rate-limit hard (Groq: 8k tokens/minute). A 429 is normal
+    # traffic control, not a failure -- waiting and retrying almost always
+    # works. We only retry while nothing has been yielded yet; once the caller
+    # has seen output we cannot rewind the stream, so we surface the error.
+    attempt = 0
+    while True:
+        try:
+            async for piece in _attempt(client, prov, model, payload, timeout, on_reasoning):
+                kind, value = piece
+                if kind == "content":
+                    saw_content = True
+                    yield value
+                elif kind == "reasoning":
+                    saw_reasoning = True
+                elif kind == "finish":
+                    finish = value
+            break
+        except _RateLimited as rl:
+            if saw_content or attempt >= 4:
+                raise ModelError(f"{prov.label}/{model}: {rl.detail}") from None
+            # Exponential backoff with a little headroom: an overloaded provider
+            # needs longer than a rate limit, and hammering it makes it worse.
+            wait = rl.retry_after if rl.retry_after else min(2 ** attempt * 2 + 1, 25)
+            attempt += 1
+            await asyncio.sleep(wait)
+
+    if not saw_content:
+        if saw_reasoning:
+            raise ModelError(
+                f"{prov.label}/{model}: spent its entire {max_tokens}-token budget "
+                "on reasoning and never produced an answer. This is a reasoning "
+                "model -- raise the MAX_TOKENS_* values in engine/config.py."
+            )
+        if finish == "length":
+            raise ModelError(
+                f"{prov.label}/{model}: hit the {max_tokens}-token limit "
+                "before producing any answer."
+            )
+
+
+class _RateLimited(Exception):
+    def __init__(self, detail: str, retry_after: float | None):
+        super().__init__(detail)
+        self.detail = detail
+        self.retry_after = retry_after
+
+
+async def _attempt(client, prov, model, payload, timeout, on_reasoning):
+    """One HTTP attempt. Yields ('content'|'reasoning'|'finish', value)."""
+    try:
+        async with client.stream(
+            "POST",
+            f"{prov.base_url}/chat/completions",
+            headers=_headers(prov),
+            json=payload,
+            timeout=timeout,
+        ) as resp:
+            # Transient and worth retrying: 429 is rate limiting, 5xx means the
+            # provider is overloaded. Gemini's free tier returns 503 "model is
+            # currently overloaded" often enough that not retrying it loses
+            # seats on a regular basis -- treat both the same way.
+            if resp.status_code in (429, 500, 502, 503, 504):
+                body = (await resp.aread()).decode("utf-8", "replace")[:200]
+                ra = resp.headers.get("retry-after")
+                try:
+                    retry_after = float(ra) if ra else None
+                except ValueError:
+                    retry_after = None
+                label = "rate limited" if resp.status_code == 429 else "provider overloaded"
+                raise _RateLimited(f"{label} ({resp.status_code}) {body.strip()}", retry_after)
+            if resp.status_code != 200:
+                body = (await resp.aread()).decode("utf-8", "replace")[:400]
+                hint = ""
+                if resp.status_code in (401, 403):
+                    hint = f" (check {prov.env_var} in .env)"
+                elif resp.status_code == 404:
+                    hint = " (model slug probably wrong -- run: python check_key.py)"
+                raise ModelError(f"{prov.label}/{model}: HTTP {resp.status_code}{hint} {body}")
+
+            async for line in resp.aiter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                data = line[6:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                if chunk.get("error"):
+                    msg = chunk["error"]
+                    if isinstance(msg, dict):
+                        msg = msg.get("message", str(msg))
+                    raise ModelError(f"{prov.label}/{model}: {msg}")
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+                if choices[0].get("finish_reason"):
+                    yield ("finish", choices[0]["finish_reason"])
+                delta = choices[0].get("delta") or {}
+
+                # Reasoning models emit this instead of content while thinking.
+                think = delta.get("reasoning") or delta.get("reasoning_content")
+                if think:
+                    yield ("reasoning", think)
+                    if on_reasoning is not None:
+                        await on_reasoning(think)
+
+                text = delta.get("content")
+                if text:
+                    yield ("content", text)
+
+
+    except httpx.TimeoutException as exc:
+        # Retryable: a provider that is slow now is often fine seconds later,
+        # and the caller only surfaces this once attempts are exhausted.
+        raise _RateLimited(f"timed out after {timeout}s", None) from exc
+    except httpx.HTTPError as exc:
+        # Includes DNS failures (getaddrinfo) and dropped connections, which on
+        # a home network are usually a blip rather than a real outage.
+        raise _RateLimited(f"connection failed ({exc})", None) from exc
+
+
+async def list_models(provider: str) -> list[dict]:
+    """Live model list for one provider."""
+    prov = get_provider(provider)
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{prov.base_url}/models", headers=_headers(prov), timeout=30.0
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        return body.get("data", body if isinstance(body, list) else [])
+
+
+async def check_configured_models() -> dict:
+    """Validate every seat in config.py against its provider's live catalogue."""
+    from . import config
+
+    seats = config.all_agents()
+    wanted = {a.provider for a in seats}
+
+    catalogues: dict[str, set[str] | None] = {}
+    errors: dict[str, str] = {}
+    for name in wanted:
+        prov = get_provider(name)
+        if prov.env_var and not prov.api_key():
+            catalogues[name] = None
+            errors[name] = f"no key ({prov.env_var} not set)"
+            continue
+        try:
+            ids = set()
+            for m in await list_models(name):
+                mid = str(m.get("id", ""))
+                ids.add(mid)
+                # Google lists models as "models/gemini-3.8-flash" but accepts
+                # the bare name in requests. Comparing raw strings reported
+                # working models as missing, which is worse than not checking.
+                if "/" in mid:
+                    ids.add(mid.split("/", 1)[1])
+            catalogues[name] = ids
+        except Exception as exc:
+            catalogues[name] = None
+            errors[name] = f"could not reach: {exc}"
+
+    results = []
+    for a in seats:
+        cat = catalogues.get(a.provider)
+        if cat is None:
+            status = "unconfigured" if "no key" in errors.get(a.provider, "") else "unreachable"
+        else:
+            status = "ok" if a.model in cat else "missing"
+        results.append({
+            "seat": a.label,
+            "provider": get_provider(a.provider).label,
+            "model": a.model,
+            "status": status,
+            "detail": errors.get(a.provider, ""),
+        })
+
+    usable = [r for r in results if r["status"] == "ok"]
+    return {
+        "ok": bool(usable) and not any(r["status"] == "missing" for r in results),
+        "seats": results,
+        "usable_count": len(usable),
+        "provider_errors": errors,
+    }

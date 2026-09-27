@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#141413">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Council</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9878;</text></svg>">
+</head>
+<body>
+
+<!-- Login gate, only shown when COUNCIL_PASSWORD is set -->
+<div id="login" class="login hidden">
+  <form id="login-form" class="login-card">
+    <h1>Council</h1>
+    <p>This instance is password protected.</p>
+    <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+    <button type="submit">Enter</button>
+    <div id="login-error" class="login-error"></div>
+  </form>
+</div>
+
+<div id="app" class="app hidden">
+
+  <!-- Sidebar / conversation list -->
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-head">
+      <span class="brand">⚖ Council</span>
+      <button id="new-chat" class="btn-new" title="New conversation">+</button>
+    </div>
+    <div id="conv-list" class="conv-list"></div>
+    <div class="sidebar-foot">
+      <button id="check-models" class="btn-ghost">Check models</button>
+    </div>
+  </aside>
+  <div id="scrim" class="scrim"></div>
+
+  <!-- Main -->
+  <main class="main">
+    <header class="topbar">
+      <button id="menu-btn" class="icon-btn" aria-label="Conversations">☰</button>
+      <div id="conv-title" class="conv-title">New conversation</div>
+      <div class="spacer"></div>
+    </header>
+
+    <div id="thread" class="thread">
+      <div id="empty" class="empty">
+        <h2>Ask the council</h2>
+        <p>Several models answer in parallel, then argue about it. You get one answer plus the questions you hadn't thought to ask.</p>
+        <div class="mode-explain">
+          <div><b>Quick</b><span>4 models in parallel, merged. ~20s</span></div>
+          <div><b>Debate</b><span>Drafter vs Critic, 3 rounds, then a verdict. ~90s</span></div>
+          <div><b>Full</b><span>Quick, then debated. Best for planning a project. ~2min</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="composer-wrap">
+      <div id="stage-banner" class="stage-banner hidden"><span class="dot"></span><span id="stage-text"></span></div>
+      <div class="composer">
+        <div class="modes" id="modes">
+          <button data-mode="moa" class="mode active">Quick</button>
+          <button data-mode="debate" class="mode">Debate</button>
+          <button data-mode="full" class="mode">Full</button>
+        </div>
+        <div class="input-row">
+          <textarea id="prompt" rows="1" placeholder="Describe the problem or the project..."></textarea>
+          <button id="send" class="send" aria-label="Send">↑</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
