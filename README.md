@@ -1,30 +1,71 @@
-# Council
+<h1 align="center">Council AI</h1>
 
-Ask several AI models the same question at once, then make them argue about it.
+<p align="center">
+  <strong>Ask several AI models the same question at once, then make them argue about it.</strong>
+</p>
 
-**Runs entirely on free API tiers.** No payment card, no paid model, no local GPU.
+<p align="center">
+  Runs entirely on free API tiers &middot; no payment card &middot; no paid model &middot; no GPU
+</p>
 
-Built because the hard part of planning a project usually isn't getting an
-answer -- it's knowing which questions to ask. Every mode ends by naming the
-decisions you still have to make.
-
----
-
-## What it does
-
-Two features, one pipeline:
-
-- **Quick (Mixture-of-Agents)** -- five models answer in parallel, each pushed
-  toward a deliberately different angle. A sixth merges them, resolving
-  contradictions rather than averaging them. ~40s.
-- **Debate** -- a Drafter writes a plan, a Critic attacks it, the Drafter
-  revises. Three rounds, then a Judge extracts the verdict. ~4min.
-- **Full** -- Quick, then the debate runs on the synthesised plan. ~7min.
-
-The models come from different vendors on purpose. Four models given the same
-prompt return four similar answers, and merging those produces mush.
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="python">
+  <img src="https://img.shields.io/badge/licence-MIT-green" alt="licence">
+  <img src="https://img.shields.io/badge/cost-%240-brightgreen" alt="cost">
+  <img src="https://img.shields.io/badge/models-6%20families-orange" alt="models">
+</p>
 
 ---
+
+Most AI tools give you an answer. The hard part of planning anything is usually
+not the answer -- it is not knowing which questions to ask.
+
+Council AI runs five models with **conflicting instructions** against the same
+prompt, merges what survives, then puts the result through a Drafter / Critic /
+Judge debate. Every mode ends with a section naming the decisions you still have
+to make.
+
+![architecture](docs/architecture.svg)
+
+## See it work
+
+**[→ Read a real run](examples/sample-run.md)** -- unedited, exported from the
+app's own database.
+
+The interesting part is not that the answers are good. It is that they
+*disagree*. On "should I build a habit tracker", one model opened with *"ship a
+single-page app with localStorage today"* while another opened with *"don't
+build a tracker, build a retention engine -- 99% of habit apps fail on churn"*.
+Four models given the same prompt would have agreed with each other and the
+merge would have been mush.
+
+## The three modes
+
+| Mode | What runs | Time |
+|---|---|---|
+| **Quick** | 5 models in parallel, then one merges them | ~40s |
+| **Debate** | Drafter writes, Critic attacks, Drafter revises &times;3, Judge rules | ~4min |
+| **Full** | Quick, then the debate runs on the synthesised plan | ~7min |
+
+## Design decisions worth defending
+
+**No agent framework.** The fan-out is `asyncio.gather`; the debate is a `for`
+loop over a transcript. LangGraph or AutoGen would add an abstraction to learn
+and a layer to debug through, and buy nothing at this size.
+
+**No two decision seats may run the same model.** A model attacking or judging
+its own output shares the blind spots that produced the flaw. Seats also spread
+across *providers*, because two models from one vendor fail together when that
+vendor has an outage.
+
+**Framings are not tied to a vendor.** A seat whose provider has no key keeps
+its angle of attack and moves to any reachable model, so the tool degrades in
+quality rather than going dark.
+
+**Your phone can drop off Wi-Fi mid-run.** Every event is persisted with a
+sequence number; a reconnecting client asks for `?after=<seq>` and replays only
+what it missed.
+
 ## Setup
 
 ```bash
@@ -204,13 +245,6 @@ discarding work you already paid for. A failed Judge returns the last revision
 of the plan. Only losing *every* proposer, or the initial draft, fails a run.
 
 ---
-
-## Why no agent framework
-
-Feature 1 is `asyncio.gather` over N calls. Feature 2 is a `for` loop over a
-growing transcript. Together that is about 300 lines. LangGraph or AutoGen
-would add an abstraction to learn and a layer to debug through, and buy nothing
-at this size. The whole app is ~4000 lines including the UI and tests.
 
 ## What building this actually taught me
 
