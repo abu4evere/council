@@ -114,6 +114,33 @@ python -m uvicorn server:app --host 0.0.0.0 --port 8000
 
 Open <http://localhost:8000>.
 
+## Letting other people use your instance
+
+Council can run on each user's own API keys instead of yours. Sign in, open
+**API keys** in the sidebar, and paste a key per provider.
+
+```
+BYOK_ONLY=true
+```
+
+With that set, runs use only the signed-in user's keys and never fall back to
+the host's. Set it on any instance other people can reach: one free tier allows
+roughly 80 full runs a *day* across everyone, and reselling free-tier capacity
+is how vendor accounts get closed.
+
+Keys are encrypted with Fernet under a key derived per user via HKDF, so one
+user's ciphertext cannot be read with another's derived key and cannot be moved
+between accounts. They are never returned by the API in full -- only a masked
+fragment. `COUNCIL_SECRET` is persisted rather than regenerated at boot,
+because a master key that only lives in memory forces every user to retype
+four API keys after every restart. Back it up; losing it makes stored keys
+unrecoverable.
+
+A key is **verified with a real API call before it is stored**. A credential
+that authenticates but lacks permission is the worst kind of failure -- a
+GitHub token missing the `Models` scope returns a plain-text `200 OK` that
+parses as an empty answer, which looks exactly like success.
+
 ## Long-term memory (optional)
 
 Point Council at a folder of markdown notes and it searches them before every

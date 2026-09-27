@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv()
 
 import db  # noqa: E402
-from engine import accounts, config, prompts, providers, vault  # noqa: E402
+from engine import accounts, config, keyring, prompts, providers, vault  # noqa: E402
 from engine.llm import check_configured_models, list_models  # noqa: E402
 from engine.orchestrator import Orchestrator  # noqa: E402
 
@@ -84,7 +84,20 @@ class RunBus:
 BUSES: dict[str, RunBus] = {}
 
 
-async def execute_turn(turn_id: str, conversation_id: str, mode: str, question: str) -> None:
+def load_user_keys(user_id: str | None) -> dict:
+    """Decrypted {env_var: api_key} for this user. Empty for a local install."""
+    if not user_id:
+        return {}
+    out = {}
+    for env_var, token in db.get_user_keys(user_id).items():
+        plain = keyring.decrypt_for(user_id, token)
+        if plain:
+            out[env_var] = plain
+    return out
+
+
+async def execute_turn(turn_id: str, conversation_id: str, mode: str, question: str,
+                       user_keys: dict | None = None) -> None:
     bus = BUSES[turn_id]
     try:
         prior = await asyncio.to_thread(
@@ -104,7 +117,9 @@ async def execute_turn(turn_id: str, conversation_id: str, mode: str, question: 
             })
             memory = vault.as_context(notes) + "\n" + memory
         orch = Orchestrator(bus.emit, memory=memory)
-        answer = await orch.run(mode, question)
+        # Every provider call inside this block sees this user's keys.
+        with keyring.use_keys(user_keys or {}):
+            answer = await orch.run(mode, question)
         await asyncio.to_thread(db.finish_turn, turn_id, answer, None)
         await bus.emit("done", None, {"final_answer": answer})
     except asyncio.CancelledError:
@@ -376,9 +391,12 @@ async def api_create_turn(
         title = question[:60] + ("..." if len(question) > 60 else "")
         await asyncio.to_thread(db.rename_conversation, cid, title)
 
+    user_keys = await asyncio.to_thread(load_user_keys, owner_id(user))
+
     bus = RunBus(turn_id)
     BUSES[turn_id] = bus
-    bus.task = asyncio.create_task(execute_turn(turn_id, cid, mode, question))
+    bus.task = asyncio.create_task(
+        execute_turn(turn_id, cid, mode, question, user_keys))
     return {"turn_id": turn_id}
 
 
@@ -604,6 +622,92 @@ def _reindex_vault() -> dict:
         return {"configured": True, "path": str(root), "sections": n}
     finally:
         conn.close()
+
+
+@app.get("/api/keys")
+async def api_list_keys(council_session: str | None = Cookie(default=None)):
+    """Which providers this user has a key for. Never returns a key."""
+    user = require_user(council_session)
+    saved = {}
+    if user:
+        for env_var, token in (await asyncio.to_thread(db.get_user_keys, user["id"])).items():
+            plain = keyring.decrypt_for(user["id"], token)
+            saved[env_var] = keyring.mask(plain) if plain else "unreadable"
+
+    byok_only = os.environ.get("BYOK_ONLY", "").strip().lower() in ("1", "true", "yes")
+    out = []
+    for prov in providers.PROVIDERS.values():
+        if not prov.env_var:
+            continue
+        out.append({
+            "provider": prov.key,
+            "label": prov.label,
+            "env_var": prov.env_var,
+            "signup": prov.signup,
+            "notes": prov.notes,
+            "yours": saved.get(prov.env_var),
+            # True when the operator's own key would be used instead.
+            "server_fallback": bool(os.environ.get(prov.env_var, "").strip()) and not byok_only,
+        })
+    return {"providers": out, "byok_only": byok_only}
+
+
+@app.put("/api/keys/{provider}")
+async def api_set_key(provider: str, request: Request,
+                      council_session: str | None = Cookie(default=None)):
+    user = require_user(council_session)
+    if not user:
+        raise HTTPException(400, "Create an account before saving keys.")
+    try:
+        prov = providers.get(provider)
+    except KeyError:
+        raise HTTPException(404, "unknown provider")
+    if not prov.env_var:
+        raise HTTPException(400, "that provider takes no key")
+
+    body = await request.json()
+    key = str(body.get("key", "")).strip()
+    if not key or len(key) < 8:
+        raise HTTPException(400, "That does not look like an API key.")
+    if len(key) > 500:
+        raise HTTPException(400, "That is too long to be an API key.")
+
+    # Verify before saving. A key that authenticates but lacks permission is
+    # the failure mode that cost this project an afternoon -- a GitHub token
+    # without the Models scope returned a plain-text 200 that parsed as an
+    # empty answer, looking exactly like success.
+    ok, detail = await _probe_key(prov.key, key)
+    if not ok:
+        raise HTTPException(400, f"That key did not work: {detail}")
+
+    await asyncio.to_thread(db.set_user_key, user["id"], prov.env_var,
+                            keyring.encrypt_for(user["id"], key))
+    return {"ok": True, "masked": keyring.mask(key), "detail": detail}
+
+
+@app.delete("/api/keys/{provider}")
+async def api_delete_key(provider: str, council_session: str | None = Cookie(default=None)):
+    user = require_user(council_session)
+    if not user:
+        raise HTTPException(400, "no account")
+    try:
+        prov = providers.get(provider)
+    except KeyError:
+        raise HTTPException(404, "unknown provider")
+    await asyncio.to_thread(db.delete_user_key, user["id"], prov.env_var)
+    return {"ok": True}
+
+
+async def _probe_key(provider: str, key: str) -> tuple[bool, str]:
+    """Does this key actually work? Runs a real request, not a format check."""
+    from engine.llm import list_models
+    prov = providers.get(provider)
+    with keyring.use_keys({prov.env_var: key}):
+        try:
+            models = await list_models(provider)
+            return True, f"{len(models)} models available"
+        except Exception as exc:
+            return False, str(exc)[:140]
 
 
 @app.get("/api/vault")

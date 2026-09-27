@@ -34,6 +34,14 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
+CREATE TABLE IF NOT EXISTS user_keys (
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    env_var    TEXT NOT NULL,
+    secret     TEXT NOT NULL,   -- Fernet token, never plaintext
+    created_at REAL NOT NULL,
+    PRIMARY KEY (user_id, env_var)
+);
+
 CREATE TABLE IF NOT EXISTS conversations (
     id          TEXT PRIMARY KEY,
     title       TEXT NOT NULL,
@@ -129,6 +137,45 @@ def user_count() -> int:
     conn = connect()
     try:
         return conn.execute("SELECT COUNT(*) c FROM users").fetchone()["c"]
+    finally:
+        conn.close()
+
+
+# --- per-user API keys ------------------------------------------------------
+
+def set_user_key(user_id: str, env_var: str, secret: str) -> None:
+    conn = connect()
+    try:
+        conn.execute(
+            """INSERT INTO user_keys (user_id, env_var, secret, created_at)
+               VALUES (?,?,?,?)
+               ON CONFLICT(user_id, env_var) DO UPDATE SET secret = excluded.secret,
+                                                           created_at = excluded.created_at""",
+            (user_id, env_var, secret, _now()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_user_keys(user_id: str) -> dict:
+    """{env_var: ciphertext}. Decryption happens in engine.keyring."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT env_var, secret FROM user_keys WHERE user_id = ?", (user_id,)
+        ).fetchall()
+        return {r["env_var"]: r["secret"] for r in rows}
+    finally:
+        conn.close()
+
+
+def delete_user_key(user_id: str, env_var: str) -> None:
+    conn = connect()
+    try:
+        conn.execute("DELETE FROM user_keys WHERE user_id = ? AND env_var = ?",
+                     (user_id, env_var))
+        conn.commit()
     finally:
         conn.close()
 

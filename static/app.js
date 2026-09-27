@@ -654,6 +654,103 @@ function closeSidebar() { $("#sidebar").classList.remove("open"); $("#scrim").cl
 $("#menu-btn").addEventListener("click", openSidebar);
 $("#scrim").addEventListener("click", closeSidebar);
 
+/* ---------------- API keys ---------------- */
+function keyRow(p) {
+  const row = el("div", "key-row");
+  const head = el("div", "key-head");
+  head.appendChild(el("span", "key-label", p.label));
+
+  if (p.yours) {
+    const b = el("span", "key-badge yours", p.yours);
+    head.appendChild(b);
+  } else if (p.server_fallback) {
+    // Honest about whose quota is being spent.
+    head.appendChild(el("span", "key-badge shared", "using host's key"));
+  } else {
+    head.appendChild(el("span", "key-badge none", "not set"));
+  }
+  row.appendChild(head);
+  row.appendChild(el("div", "key-note", p.notes));
+
+  const form = el("div", "key-form");
+  const input = el("input", "key-input");
+  input.type = "password";
+  input.placeholder = p.yours ? "Replace key..." : "Paste your key";
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  form.appendChild(input);
+
+  const save = el("button", "key-save", "Save");
+  save.addEventListener("click", async () => {
+    const key = input.value.trim();
+    if (!key) return;
+    save.disabled = true;
+    save.textContent = "Checking...";
+    try {
+      // The server makes a real call before storing anything, so a key that
+      // authenticates but lacks permission is caught here rather than
+      // halfway through a seven-minute run.
+      const r = await api(`/api/keys/${p.provider}`, {
+        method: "PUT", body: JSON.stringify({ key }),
+      });
+      toast(`${p.label} key saved - ${r.detail}`);
+      input.value = "";
+      await loadKeys();
+    } catch (err) {
+      toast(err.message, 7000);
+      save.disabled = false;
+      save.textContent = "Save";
+    }
+  });
+  form.appendChild(save);
+
+  if (p.yours) {
+    const del = el("button", "key-del", "Remove");
+    del.addEventListener("click", async () => {
+      await api(`/api/keys/${p.provider}`, { method: "DELETE" });
+      toast(`${p.label} key removed`);
+      await loadKeys();
+    });
+    form.appendChild(del);
+  }
+  row.appendChild(form);
+
+  const link = el("a", "key-link", "Get a free key");
+  link.href = p.signup.split(" ")[0];
+  link.target = "_blank";
+  link.rel = "noopener";
+  row.appendChild(link);
+  return row;
+}
+
+async function loadKeys() {
+  const box = $("#keys-list");
+  try {
+    const data = await api("/api/keys");
+    box.innerHTML = "";
+    if (data.byok_only) {
+      box.appendChild(el("div", "key-mode",
+        "This instance requires your own keys - the host does not provide any."));
+    }
+    for (const p of data.providers) box.appendChild(keyRow(p));
+  } catch (err) {
+    box.textContent = err.message;
+  }
+}
+
+$("#open-keys").addEventListener("click", async () => {
+  $("#keys-modal").classList.remove("hidden");
+  closeSidebar();
+  await loadKeys();
+});
+$("#keys-close").addEventListener("click", () => $("#keys-modal").classList.add("hidden"));
+$("#keys-modal").addEventListener("click", (e) => {
+  if (e.target.id === "keys-modal") $("#keys-modal").classList.add("hidden");
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") $("#keys-modal").classList.add("hidden");
+});
+
 $("#check-models").addEventListener("click", async () => {
   toast("Checking models against OpenRouter...");
   try {

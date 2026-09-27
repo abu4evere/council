@@ -57,6 +57,7 @@
         <span id="whoami-name"></span>
         <button id="logout" class="link-btn">Sign out</button>
       </div>
+      <button id="open-keys" class="btn-ghost">API keys</button>
       <button id="check-models" class="btn-ghost">Check models</button>
     </div>
   </aside>
@@ -102,6 +103,22 @@
       </div>
     </div>
   </main>
+</div>
+
+<!-- API keys -->
+<div id="keys-modal" class="modal hidden">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h2>Your API keys</h2>
+      <button id="keys-close" class="icon-x" aria-label="Close">&times;</button>
+    </header>
+    <p class="modal-sub">
+      Council runs on your own keys, so your quota is yours alone. Keys are
+      encrypted before they are stored and never shown back to you in full.
+      Every provider below has a free tier.
+    </p>
+    <div id="keys-list" class="keys-list">Loading...</div>
+  </div>
 </div>
 
 <div id="toast" class="toast hidden"></div>

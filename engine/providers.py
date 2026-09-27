@@ -56,7 +56,21 @@ class Provider:
         return out
 
     def api_key(self) -> str | None:
+        """The key to use right now.
+
+        The signed-in user's own key wins over the server's. Reading
+        os.environ alone was fine for one person on a laptop and wrong the
+        moment two people run at once -- the environment is process-global,
+        so whoever started last would have been spending the other's quota.
+        """
         if self.env_var is None:
+            return None
+        from .keyring import current_key
+        mine = current_key(self.env_var)
+        if mine:
+            return mine
+        if os.environ.get("BYOK_ONLY", "").strip().lower() in ("1", "true", "yes"):
+            # Hosted mode: never fall back to the operator's keys.
             return None
         return os.environ.get(self.env_var, "").strip() or None
 
