@@ -54,18 +54,26 @@
     </div>
 
     <div class="hero-art reveal" style="--d:.12s">
-      <div class="term">
+      <div class="term" id="demo">
         <div class="term-bar"><i></i><i></i><i></i><span>council</span></div>
         <div class="term-body">
-          <p class="term-q">Should I build one large project or five small ones?</p>
-          <div class="term-grid">
-            <div class="chip" style="--c:#c96442"><b>Pragmatist</b><span>gpt&#8209;oss&#8209;120b</span></div>
-            <div class="chip" style="--c:#5b8def"><b>Systems</b><span>gemini&#8209;3.8</span></div>
-            <div class="chip" style="--c:#3fa87a"><b>Contrarian</b><span>qwen&#8209;3.8</span></div>
-            <div class="chip" style="--c:#a855c7"><b>Operator</b><span>gemma&#8209;4</span></div>
-            <div class="chip" style="--c:#d4a02c"><b>Skeptic</b><span>kimi&#8209;k3</span></div>
+          <p class="term-q" id="demo-q"></p>
+          <div class="term-grid" id="demo-grid">
+            <div class="chip" data-seat="0" style="--c:#c96442"><b>Pragmatist</b><span class="chip-state">waiting</span></div>
+            <div class="chip" data-seat="1" style="--c:#5b8def"><b>Systems</b><span class="chip-state">waiting</span></div>
+            <div class="chip" data-seat="2" style="--c:#3fa87a"><b>Contrarian</b><span class="chip-state">waiting</span></div>
+            <div class="chip" data-seat="3" style="--c:#a855c7"><b>Operator</b><span class="chip-state">waiting</span></div>
+            <div class="chip" data-seat="4" style="--c:#d4a02c"><b>Skeptic</b><span class="chip-state">waiting</span></div>
           </div>
-          <div class="term-line"><span class="pulse"></span> round 2 of 3 &mdash; critique <em>1:47</em></div>
+          <div class="term-verdict" id="demo-verdict">
+            <span class="verdict-label">Decide these</span>
+            <span class="verdict-text">Who is this for? Does it need sync? Daily or weekly habits?</span>
+          </div>
+          <div class="term-line">
+            <span class="pulse" id="demo-pulse"></span>
+            <span id="demo-stage">ready</span>
+            <em id="demo-time">0:00</em>
+          </div>
         </div>
       </div>
     </div>
@@ -216,5 +224,6 @@
 </footer>
 
 <script src="/static/landing.js"></script>
+<script src="/static/demo.js"></script>
 </body>
 </html>
