@@ -329,7 +329,25 @@ async def main():
         ok = False
         print(f"[FAIL] thinking stripper: {bad}")
 
-    # 16. Memory preamble must survive being passed through a real run.
+    # 16. Budget escalation. Reasoning models spend a variable, prompt-dependent
+    #     share of their budget thinking before writing anything -- gpt-oss,
+    #     qwen, kimi and gemma each hit this at a different ceiling, and picking
+    #     a number per model was a losing game. The client must notice the
+    #     failure and retry with more room instead of giving up.
+    import inspect
+    import engine.llm as _llm
+    src = inspect.getsource(_llm.stream_completion)
+    has_escalation = "budget = min(budget * 2, cap)" in src
+    resets_stripper = src.count("stripper = ThinkingStripper()") >= 2
+    respects_cap = "cap = get_provider(provider).token_cap" in src
+    if has_escalation and resets_stripper and respects_cap:
+        print("[PASS] budget escalates on reasoning-only responses, capped per provider")
+    else:
+        ok = False
+        print(f"[FAIL] escalation: doubles={has_escalation} "
+              f"resets_stripper={resets_stripper} capped={respects_cap}")
+
+    # 17. Memory preamble must survive being passed through a real run.
     from engine import prompts as P
     pre = P.memory_preamble([{"user_prompt": "earlier q", "final_answer": "earlier a"}])
     if "earlier q" in pre and "earlier a" in pre and "Current question" in pre:

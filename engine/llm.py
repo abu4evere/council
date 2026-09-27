@@ -112,8 +112,19 @@ async def stream_completion(
     # seat as though it were the argument.
     stripper = ThinkingStripper()
 
+    # Budget escalation. Reasoning models spend a wildly variable share of the
+    # budget thinking before they write anything, and the amount depends on the
+    # prompt, not just the model -- gpt-oss, qwen, kimi and gemma have each hit
+    # this at a different ceiling. Guessing a number per model was a losing
+    # game, so instead: notice the failure and retry with more room, up to what
+    # the provider allows. Self-correcting, and costs nothing on models that
+    # answer normally.
+    budget = max_tokens
+    cap = get_provider(provider).token_cap
+
     attempt = 0
     while True:
+        payload["max_tokens"] = budget
         try:
             async for piece in _attempt(client, prov, model, payload, timeout, on_reasoning):
                 kind, value = piece
@@ -138,6 +149,14 @@ async def stream_completion(
             if tail_answer:
                 saw_content = True
                 yield tail_answer
+
+            if not saw_content and saw_reasoning and budget < cap:
+                # Thought the whole budget away. Give it more room and retry.
+                budget = min(budget * 2, cap)
+                saw_reasoning = False
+                stripper = ThinkingStripper()
+                continue
+
             BREAKER.record_success(prov.key)
             break
         except _RateLimited as rl:
@@ -169,8 +188,7 @@ async def stream_completion(
         if saw_reasoning:
             raise ModelError(
                 f"{prov.label}/{model}: spent its entire {max_tokens}-token budget "
-                "on reasoning and never produced an answer. This is a reasoning "
-                "model -- raise the MAX_TOKENS_* values in engine/config.py."
+                "on reasoning and never produced an answer, even after escalation."
             )
         if finish == "length":
             raise ModelError(
@@ -182,6 +200,10 @@ async def stream_completion(
             "The endpoint answered but sent nothing usable -- usually a "
             "credential that authenticates but lacks permission for this API."
         )
+
+
+class _NeedsMoreTokens(Exception):
+    """The model spent its whole budget thinking and never wrote an answer."""
 
 
 class _RateLimited(Exception):

@@ -164,7 +164,13 @@ PROVIDERS: dict[str, Provider] = {
         notes="Hosts Llama, DeepSeek, Nemotron and others. Widest family variety "
               "of the free options.",
         max_parallel=2,
-        alternates=(),
+        # Verified live 2026-09-27. NOTE: its /models listing includes entries
+        # it will not actually serve -- mistral-large-2-instruct and
+        # llama-3.1-nemotron-70b-instruct are listed but 404 on use. Only
+        # models confirmed by a real call belong here.
+        alternates=("deepseek-ai/deepseek-v4.1-flash", "moonshotai/kimi-k3",
+                    "nvidia/nemotron-3-super-120b-a12b"),
+        token_cap=8000,
     ),
     "huggingface": Provider(
         key="huggingface",

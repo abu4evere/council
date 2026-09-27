@@ -81,6 +81,17 @@ PROPOSERS: list[Agent] = [
             "month. Put concrete numbers on things where you can."
         ),
     ),
+    Agent(
+        key="skeptic", label="Skeptic",
+        provider="nvidia", model="moonshotai/kimi-k3",
+        color="#d4a02c",
+        framing=(
+            "Look for what is missing rather than what is wrong. What has the "
+            "request not mentioned that will decide whether this succeeds? Name "
+            "the constraint, dependency or person nobody has accounted for, and "
+            "say what breaks when it surfaces late."
+        ),
+    ),
 ]
 
 # --- The synthesis and debate seats ----------------------------------------
@@ -106,13 +117,13 @@ DEBATE_ARCHITECT = Agent(key="drafter", label="Drafter",
                          provider="groq", model="openai/gpt-oss-120b", color="#c96442")
 
 DEBATE_CRITIC = Agent(key="critic", label="Critic",
-                      provider="cerebras", model="qwen-3.8-27b", color="#3fa87a")
+                      provider="nvidia", model="deepseek-ai/deepseek-v4.1-flash", color="#3fa87a")
 
 # The Judge reads the final plan plus every critique -- the single largest input
 # in the system, and the seat that failed with HTTP 413 on Groq's 8000 tok/min
 # tier. Gemini's ceiling is what makes Debate mode reliable.
 DEBATE_JUDGE = Agent(key="judge", label="Judge",
-                     provider="gemini", model="gemini-3.8-flash", color="#d4a02c")
+                     provider="cerebras", model="qwen-3.8-27b", color="#d4a02c")
 
 
 def resolve_seat(agent: Agent, avoid: set[str] | None = None,
