@@ -73,7 +73,7 @@ PROPOSERS: list[Agent] = [
     ),
     Agent(
         key="operator", label="Operator",
-        provider="gemini", model="gemini-3.5-flash",
+        provider="gemini", model="gemma-4-31b-it",
         color="#a855c7",
         framing=(
             "Focus on what happens after it is built: cost, latency, maintenance, "

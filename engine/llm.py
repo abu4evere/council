@@ -15,6 +15,7 @@ from typing import AsyncIterator
 import httpx
 
 from .breaker import CircuitBreaker
+from .thinking import ThinkingStripper
 from .providers import Provider, get as get_provider
 
 # One breaker for the process. Shared across runs on purpose: if Gemini is
@@ -105,18 +106,38 @@ async def stream_completion(
     # traffic control, not a failure -- waiting and retrying almost always
     # works. We only retry while nothing has been yielded yet; once the caller
     # has seen output we cannot rewind the stream, so we surface the error.
+    # Some models put their thinking inline in the content, wrapped in
+    # <thought> tags, rather than in separate reasoning deltas. Without this
+    # the raw thinking lands in the answer AND gets passed to the next debate
+    # seat as though it were the argument.
+    stripper = ThinkingStripper()
+
     attempt = 0
     while True:
         try:
             async for piece in _attempt(client, prov, model, payload, timeout, on_reasoning):
                 kind, value = piece
                 if kind == "content":
-                    saw_content = True
-                    yield value
+                    answer_part, thought_part = stripper.feed(value)
+                    if thought_part:
+                        saw_reasoning = True
+                        if on_reasoning is not None:
+                            await on_reasoning(thought_part)
+                    if answer_part:
+                        saw_content = True
+                        yield answer_part
                 elif kind == "reasoning":
                     saw_reasoning = True
                 elif kind == "finish":
                     finish = value
+            # Release anything the stripper was holding back at the boundary.
+            tail_answer, tail_thought = stripper.flush()
+            if tail_thought and on_reasoning is not None:
+                saw_reasoning = True
+                await on_reasoning(tail_thought)
+            if tail_answer:
+                saw_content = True
+                yield tail_answer
             BREAKER.record_success(prov.key)
             break
         except _RateLimited as rl:
@@ -175,7 +196,7 @@ async def _attempt(client, prov, model, payload, timeout, on_reasoning):
     try:
         async with client.stream(
             "POST",
-            f"{prov.base_url}/chat/completions",
+            f"{prov.url()}/chat/completions",
             headers=_headers(prov),
             json=payload,
             timeout=timeout,
@@ -251,7 +272,7 @@ async def list_models(provider: str) -> list[dict]:
     prov = get_provider(provider)
     async with httpx.AsyncClient() as client:
         resp = await client.get(
-            f"{prov.base_url}/models", headers=_headers(prov), timeout=30.0
+            f"{prov.url()}/models", headers=_headers(prov), timeout=30.0
         )
         resp.raise_for_status()
         body = resp.json()

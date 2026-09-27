@@ -41,6 +41,20 @@ class Provider:
     # others, which then returned nothing at all.
     token_cap: int = 8000
 
+    def url(self) -> str:
+        """base_url with any ${ENV_VAR} placeholders filled in.
+
+        Cloudflare puts the account id in the path rather than a header, so the
+        URL itself has to be templated.
+        """
+        out = self.base_url
+        while "${" in out:
+            start = out.index("${")
+            end = out.index("}", start)
+            var = out[start + 2:end]
+            out = out[:start] + os.environ.get(var, "").strip() + out[end + 1:]
+        return out
+
     def api_key(self) -> str | None:
         if self.env_var is None:
             return None
@@ -79,7 +93,12 @@ PROVIDERS: dict[str, Provider] = {
         max_parallel=3,
         # Verified live 2026-09-27. The 2.x line is retired for new accounts,
         # and the pro models 429 immediately on the free quota.
-        alternates=("gemini-3.8-flash", "gemini-3.5-flash", "gemini-flash-latest",
+        # gemma-* are Google's OPEN models: a different family from gemini,
+        # trained differently, and they disagree with it more often than
+        # another gemini version would. Verified live 2026-09-27. They emit
+        # <thought> tags inline, which engine/thinking.py strips.
+        alternates=("gemini-3.8-flash", "gemma-4-31b-it", "gemini-3.5-flash",
+                    "gemini-flash-latest", "gemma-4-26b-a4b-it",
                     "gemini-3-flash-preview", "gemini-3.1-flash-lite"),
         token_cap=8000,
     ),
@@ -124,6 +143,50 @@ PROVIDERS: dict[str, Provider] = {
         env_var="OPENROUTER_API_KEY",
         signup="https://openrouter.ai/keys",
         notes="Use ':free' model slugs to pay nothing. Low daily cap without credit.",
+    ),
+    "sambanova": Provider(
+        key="sambanova",
+        label="SambaNova",
+        base_url="https://api.sambanova.ai/v1",
+        env_var="SAMBANOVA_API_KEY",
+        signup="https://cloud.sambanova.ai/apis",
+        notes="Free tier, no card. Serves LLAMA models -- a family you do not "
+              "otherwise have.",
+        max_parallel=2,
+        alternates=(),   # run check_key.py to discover; slugs unverified
+    ),
+    "nvidia": Provider(
+        key="nvidia",
+        label="NVIDIA NIM",
+        base_url="https://integrate.api.nvidia.com/v1",
+        env_var="NVIDIA_API_KEY",
+        signup="https://build.nvidia.com (free credits, no card)",
+        notes="Hosts Llama, DeepSeek, Nemotron and others. Widest family variety "
+              "of the free options.",
+        max_parallel=2,
+        alternates=(),
+    ),
+    "huggingface": Provider(
+        key="huggingface",
+        label="Hugging Face",
+        base_url="https://router.huggingface.co/v1",
+        env_var="HF_TOKEN",
+        signup="https://huggingface.co/settings/tokens (read token is enough)",
+        notes="Router in front of many open models. Free tier is small but the "
+              "variety is unmatched.",
+        max_parallel=1,
+        alternates=(),
+    ),
+    "cloudflare": Provider(
+        key="cloudflare",
+        label="Cloudflare Workers AI",
+        base_url="https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/ai/v1",
+        env_var="CF_API_TOKEN",
+        signup="https://dash.cloudflare.com -> AI -> Workers AI. Needs BOTH "
+               "CF_API_TOKEN and CF_ACCOUNT_ID.",
+        notes="Free daily allowance. Serves Llama, Mistral, Gemma, Qwen.",
+        max_parallel=2,
+        alternates=(),
     ),
     "ollama": Provider(
         key="ollama",

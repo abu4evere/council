@@ -296,7 +296,40 @@ async def main():
         ok = False
         print(f"[FAIL] token caps not per-provider: groq={groq_cap} gemini={gem_cap}")
 
-    # 15. Memory preamble must survive being passed through a real run.
+    # 15. Inline <thought> tags must never reach the answer. Some models
+    #     (gemma-4-*, DeepSeek R1) put their thinking in the content stream
+    #     rather than in separate reasoning deltas -- untreated, the raw
+    #     thinking lands in the answer AND is fed to the next debate seat as
+    #     though it were the argument.
+    from engine.thinking import ThinkingStripper
+    strip_cases = [
+        (["<thought>hmm</thought>Answer"], "Answer", "hmm"),
+        (["<thou", "ght>hmm", "</thou", "ght>Ans"], "Ans", "hmm"),
+        (["Plain answer, no tags."], "Plain answer, no tags.", ""),
+        (["Before <think>mid</think> after"], "Before  after", "mid"),
+        (["<thought>never closed"], "", "never closed"),
+    ]
+    bad = []
+    for chunks, want_answer, want_think in strip_cases:
+        st = ThinkingStripper()
+        a, t = "", ""
+        for ch in chunks:
+            x, y = st.feed(ch)
+            a += x
+            t += y
+        x, y = st.flush()
+        a += x
+        t += y
+        if a != want_answer or t != want_think:
+            bad.append((chunks, a, t))
+    if not bad:
+        print(f"[PASS] inline <thought> tags stripped, including across chunk "
+              f"boundaries ({len(strip_cases)} cases)")
+    else:
+        ok = False
+        print(f"[FAIL] thinking stripper: {bad}")
+
+    # 16. Memory preamble must survive being passed through a real run.
     from engine import prompts as P
     pre = P.memory_preamble([{"user_prompt": "earlier q", "final_answer": "earlier a"}])
     if "earlier q" in pre and "earlier a" in pre and "Current question" in pre:

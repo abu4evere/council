@@ -100,7 +100,44 @@ async def check_models() -> bool:
     return not missing
 
 
+async def discover(only: str | None = None) -> None:
+    """List every chat model each configured provider actually offers.
+
+    Use this instead of guessing slugs -- every name I have ever assumed from
+    memory has been wrong. Paste what you want into engine/config.py.
+    """
+    from engine.llm import list_models
+
+    # These are not chat models and only clutter the list.
+    NOISE = ("whisper", "embed", "tts", "audio", "image", "rerank", "guard",
+             "safeguard", "moderation", "vision-ocr", "lyria", "veo", "imagen",
+             "nano-banana", "transcribe", "orpheus", "robotics")
+
+    for prov in providers.PROVIDERS.values():
+        if only and prov.key != only:
+            continue
+        if not prov.env_var or not prov.configured():
+            continue
+        try:
+            models = await list_models(prov.key)
+        except Exception as exc:
+            print(f"\n{prov.label}: could not list -> {str(exc)[:110]}")
+            continue
+        ids = sorted({str(m.get("id", "")).split("/", 1)[-1] if prov.key == "gemini"
+                      else str(m.get("id", "")) for m in models})
+        chat = [i for i in ids if i and not any(n in i.lower() for n in NOISE)]
+        print(f"\n{prov.label} -- {len(chat)} chat model(s) of {len(ids)} total")
+        for i in chat[:40]:
+            print("   ", i)
+        if len(chat) > 40:
+            print(f"    ... and {len(chat) - 40} more")
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--discover":
+        only = sys.argv[2] if len(sys.argv) > 2 else None
+        asyncio.run(discover(only))
+        sys.exit(0)
     if not check_providers():
         sys.exit(1)
     sys.exit(0 if asyncio.run(check_models()) else 1)
