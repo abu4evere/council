@@ -31,25 +31,84 @@ html, body {
 
 .hidden { display: none !important; }
 
-/* ---------- login ---------- */
+/* ---------- auth screen ----------
+   Restraint over decoration: one card, generous spacing, and motion only where
+   it explains a state change (the tab underline moving, the button showing it
+   is working). Nothing animates just because it can. */
 .login {
   position: fixed; inset: 0; display: grid; place-items: center;
   background: var(--bg); z-index: 100; padding: 24px;
 }
 .login-card {
-  width: 100%; max-width: 340px; display: flex; flex-direction: column; gap: 12px;
+  width: 100%; max-width: 360px;
   background: var(--bg-raised); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 28px 24px;
+  border-radius: 18px; padding: 34px 30px 28px;
+  animation: card-in .34s cubic-bezier(.16,1,.3,1);
 }
-.login-card h1 { font-size: 22px; font-weight: 600; }
-.login-card p { color: var(--text-dim); font-size: 13px; margin-bottom: 4px; }
-.login-card input, .login-card button {
-  font: inherit; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--border);
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(8px) scale(.99); }
+  to   { opacity: 1; transform: none; }
 }
-.login-card input { background: var(--bg-input); color: var(--text); }
-.login-card input:focus { outline: none; border-color: var(--accent-dim); }
-.login-card button { background: var(--accent); color: #fff; border: none; font-weight: 600; cursor: pointer; }
-.login-error { color: var(--err); font-size: 13px; min-height: 18px; }
+.auth-brand { font-size: 26px; line-height: 1; margin-bottom: 14px; }
+.login-card h1 { font-size: 21px; font-weight: 600; letter-spacing: -.01em; }
+.login-card p { color: var(--text-dim); font-size: 13px; margin-top: 5px; }
+
+.auth-tabs {
+  position: relative; display: flex; gap: 2px; margin: 24px 0 20px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.auth-tab {
+  background: none; border: none; color: var(--text-faint);
+  font: inherit; font-size: 13px; padding: 8px 12px; cursor: pointer;
+  transition: color .16s ease;
+}
+.auth-tab:hover { color: var(--text-dim); }
+.auth-tab.active { color: var(--text); }
+.auth-tab-ink {
+  position: absolute; bottom: -1px; left: 0; height: 2px; width: 0;
+  background: var(--accent); border-radius: 2px;
+  transition: transform .26s cubic-bezier(.16,1,.3,1), width .26s cubic-bezier(.16,1,.3,1);
+}
+
+.field { display: block; margin-bottom: 14px; }
+.field span {
+  display: block; font-size: 11.5px; color: var(--text-dim); margin-bottom: 6px;
+}
+.field input {
+  width: 100%; font: inherit; font-size: 14px; padding: 10px 13px;
+  background: var(--bg-input); color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px;
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+.field input:focus {
+  outline: none; border-color: var(--accent-dim);
+  box-shadow: 0 0 0 3px rgba(201,100,66,.13);
+}
+.field input::placeholder { color: #55534e; }
+
+#auth-submit {
+  width: 100%; font: inherit; font-size: 14px; font-weight: 600;
+  padding: 11px; margin-top: 6px; cursor: pointer;
+  background: var(--accent); color: #fff; border: none; border-radius: 10px;
+  transition: background .16s ease, opacity .16s ease;
+}
+#auth-submit:hover:not(:disabled) { background: #d4714f; }
+#auth-submit:disabled { opacity: .6; cursor: default; }
+
+.auth-hint { color: var(--text-faint); font-size: 11.5px; min-height: 16px; margin-bottom: 4px; }
+.login-error { color: var(--err); font-size: 12.5px; min-height: 18px; margin-top: 10px; }
+
+/* signed-in badge */
+.whoami {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--text-dim); margin-bottom: 8px; padding: 0 2px;
+}
+.link-btn {
+  margin-left: auto; background: none; border: none; color: var(--text-faint);
+  font: inherit; font-size: 11.5px; cursor: pointer; padding: 0;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.link-btn:hover { color: var(--text); }
 
 /* ---------- layout ---------- */
 .app { display: flex; height: 100dvh; overflow: hidden; }

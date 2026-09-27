@@ -130,16 +130,22 @@ Look for `IPv4 Address` (something like `192.168.1.x`), then open
 network. Windows Firewall will probably prompt the first time — allow it for
 private networks.
 
-**Set a password first.** Anyone on the same network can otherwise open the URL
-and spend your API quota:
+**Create an account first.** Open the app and use *Create account*; the first
+account adopts any history that existed before accounts did. Anyone on the same
+network can otherwise open the URL and spend your API quota.
 
-```
-COUNCIL_PASSWORD=some-long-passphrase
-```
+Passwords are hashed with `hashlib.scrypt` (standard library, memory-hard, no
+compiled dependency). Sessions live in SQLite, not in memory, so restarting the
+server does not sign you out. Login is throttled to 8 failed attempts per
+address per 5 minutes -- an unthrottled form defeats any password a human will
+actually type.
 
-The login is throttled to 8 failed attempts per address per 5 minutes, which is
-what makes a human-typeable passphrase safe here -- password strength alone does
-not help against an unthrottled form.
+Conversations are scoped to their owner in SQL rather than filtered afterwards,
+because a filter forgotten at one call site leaks someone else's history while a
+missing `WHERE` clause simply returns nothing.
+
+`COUNCIL_PASSWORD` still works as a single shared gate, but only while no
+account exists -- so self-hosters are not locked out by upgrading.
 
 **From anywhere.** Use a tunnel:
 

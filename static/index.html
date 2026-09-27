@@ -12,15 +12,35 @@
 </head>
 <body>
 
-<!-- Login gate, only shown when COUNCIL_PASSWORD is set -->
+<!-- Auth: sign in or create an account -->
 <div id="login" class="login hidden">
-  <form id="login-form" class="login-card">
-    <h1>Council</h1>
-    <p>This instance is password protected.</p>
-    <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
-    <button type="submit">Enter</button>
-    <div id="login-error" class="login-error"></div>
-  </form>
+  <div class="login-card">
+    <div class="auth-brand">&#9878;</div>
+    <h1 id="auth-title">Council AI</h1>
+    <p id="auth-sub">Several models answer, then argue about it.</p>
+
+    <div class="auth-tabs" id="auth-tabs">
+      <button type="button" class="auth-tab active" data-tab="login">Sign in</button>
+      <button type="button" class="auth-tab" data-tab="signup">Create account</button>
+      <span class="auth-tab-ink" id="tab-ink"></span>
+    </div>
+
+    <form id="auth-form" autocomplete="on">
+      <label class="field">
+        <span>Username</span>
+        <input type="text" id="auth-username" autocomplete="username"
+               autocapitalize="none" spellcheck="false" placeholder="abu4evere">
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input type="password" id="auth-password" autocomplete="current-password"
+               placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;">
+      </label>
+      <div id="auth-hint" class="auth-hint"></div>
+      <button type="submit" id="auth-submit">Sign in</button>
+      <div id="login-error" class="login-error"></div>
+    </form>
+  </div>
 </div>
 
 <div id="app" class="app hidden">
@@ -33,6 +53,10 @@
     </div>
     <div id="conv-list" class="conv-list"></div>
     <div class="sidebar-foot">
+      <div id="whoami" class="whoami hidden">
+        <span id="whoami-name"></span>
+        <button id="logout" class="link-btn">Sign out</button>
+      </div>
       <button id="check-models" class="btn-ghost">Check models</button>
     </div>
   </aside>

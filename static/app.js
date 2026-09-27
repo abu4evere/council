@@ -86,7 +86,10 @@ async function api(path, opts = {}) {
     credentials: "same-origin",
     ...opts,
   });
-  if (res.status === 401) { showLogin(); throw new Error("not authenticated"); }
+  if (res.status === 401 && !path.startsWith("/api/login") && !path.startsWith("/api/signup")) {
+    showLogin();
+    throw new Error("not authenticated");
+  }
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try { msg = (await res.json()).error || msg; } catch {}
@@ -96,23 +99,86 @@ async function api(path, opts = {}) {
 }
 
 /* ---------------- auth ---------------- */
+let authMode = "login";
+
 function showLogin() { $("#login").classList.remove("hidden"); $("#app").classList.add("hidden"); }
 function showApp() { $("#login").classList.add("hidden"); $("#app").classList.remove("hidden"); }
 
-$("#login-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
+function setAuthMode(mode) {
+  authMode = mode;
+  const signup = mode === "signup";
+  $("#auth-submit").textContent = signup ? "Create account" : "Sign in";
+  $("#auth-password").setAttribute("autocomplete", signup ? "new-password" : "current-password");
+  $("#auth-hint").textContent = signup
+    ? "At least 3 characters for the username, 8 for the password."
+    : "";
   $("#login-error").textContent = "";
+  document.querySelectorAll(".auth-tab").forEach((b) =>
+    b.classList.toggle("active", b.dataset.tab === mode));
+  // Slide the underline to the active tab. Motion here is doing a job --
+  // showing which control you moved to -- rather than decorating the page.
+  const active = document.querySelector(`.auth-tab[data-tab="${mode}"]`);
+  const ink = $("#tab-ink");
+  if (active && ink) {
+    ink.style.width = active.offsetWidth + "px";
+    ink.style.transform = `translateX(${active.offsetLeft}px)`;
+  }
+}
+
+$("#auth-tabs").addEventListener("click", (e) => {
+  const b = e.target.closest(".auth-tab");
+  if (b) setAuthMode(b.dataset.tab);
+});
+
+$("#auth-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("#auth-submit");
+  const username = $("#auth-username").value.trim();
+  const password = $("#auth-password").value;
+  $("#login-error").textContent = "";
+
+  if (!username || !password) {
+    $("#login-error").textContent = "Fill in both fields.";
+    return;
+  }
+
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = authMode === "signup" ? "Creating..." : "Signing in...";
   try {
-    await api("/api/login", {
+    await api(authMode === "signup" ? "/api/signup" : "/api/login", {
       method: "POST",
-      body: JSON.stringify({ password: $("#login-password").value }),
+      body: JSON.stringify({ username, password }),
     });
     showApp();
     await boot();
   } catch (err) {
-    $("#login-error").textContent = "Wrong password.";
+    // The server's message is the useful one -- "That username is taken",
+    // "Password must be at least 8 characters" -- so show it rather than a
+    // generic failure.
+    $("#login-error").textContent = err.message || "Something went wrong.";
+    $("#auth-password").value = "";
+    $("#auth-password").focus();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
   }
 });
+
+$("#logout").addEventListener("click", async () => {
+  try { await api("/api/logout", { method: "POST" }); } catch {}
+  location.reload();
+});
+
+async function showWhoami() {
+  try {
+    const st = await api("/api/auth-status");
+    if (st.username) {
+      $("#whoami-name").textContent = st.username;
+      $("#whoami").classList.remove("hidden");
+    }
+  } catch {}
+}
 
 /* ---------------- conversations ---------------- */
 async function loadConversations() {
@@ -597,8 +663,15 @@ async function boot() {
 (async function init() {
   try {
     const st = await api("/api/auth-status");
-    if (st.required && !st.authenticated) { showLogin(); return; }
+    if (st.required && !st.authenticated) {
+      showLogin();
+      // A fresh instance with no accounts yet should open on "create account",
+      // because there is nothing to sign in to.
+      setAuthMode(st.mode === "accounts" ? "login" : "signup");
+      return;
+    }
     showApp();
+    await showWhoami();
     await boot();
   } catch (err) {
     showApp();

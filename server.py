@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv()
 
 import db  # noqa: E402
-from engine import config, prompts, providers  # noqa: E402
+from engine import accounts, config, prompts, providers  # noqa: E402
 from engine.llm import check_configured_models, list_models  # noqa: E402
 from engine.orchestrator import Orchestrator  # noqa: E402
 
@@ -117,19 +117,18 @@ async def execute_turn(turn_id: str, conversation_id: str, mode: str, question: 
 # Auth (optional, single shared password)
 # ---------------------------------------------------------------------------
 
-SESSIONS: set[str] = set()
+# Legacy shared-password sessions, kept only while no account exists so that
+# upgrading does not lock a self-hoster out of their own instance.
+SHARED_SESSIONS: set[str] = set()
 
 # Failed login attempts per client address. Password strength is only half the
-# story -- an unthrottled login form lets a script try millions of guesses, and
-# a passphrase a human can type on a phone is not meant to survive that. With
-# throttling, even a modest passphrase is far out of reach.
+# story -- an unthrottled login form lets a script try millions of guesses.
 _LOGIN_FAILURES: dict[str, list[float]] = {}
-_LOGIN_WINDOW = 300.0     # seconds
-_LOGIN_MAX_TRIES = 8      # per window, per address
+_LOGIN_WINDOW = 300.0
+_LOGIN_MAX_TRIES = 8
 
 
 def _login_blocked(addr: str) -> float:
-    """Seconds the caller must wait, or 0 if they may try."""
     now = time.monotonic()
     tries = [t for t in _LOGIN_FAILURES.get(addr, []) if now - t < _LOGIN_WINDOW]
     _LOGIN_FAILURES[addr] = tries
@@ -142,49 +141,145 @@ def _record_login_failure(addr: str) -> None:
     _LOGIN_FAILURES.setdefault(addr, []).append(time.monotonic())
 
 
-def password_required() -> bool:
-    return bool(os.environ.get("COUNCIL_PASSWORD", "").strip())
+def _addr(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
 
 
-def check_auth(session: str | None) -> None:
-    if not password_required():
-        return
-    if not session or session not in SESSIONS:
+def _set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        "council_session", token, httponly=True, samesite="lax",
+        max_age=accounts.SESSION_DAYS * 86400,
+    )
+
+
+def current_user(token: str | None) -> dict | None:
+    """The signed-in user, or None.
+
+    Sessions live in SQLite rather than in memory. That is the entire fix for
+    "I have to type the password every time" -- the old in-memory set was
+    emptied by every restart, which logged every device out.
+    """
+    if not token:
+        return None
+    return db.session_user(token)
+
+
+def require_user(token: str | None) -> dict | None:
+    """Enforce access. Returns the user, or None in shared-password mode.
+
+    Three states:
+      * accounts exist  -> a valid session is required
+      * no accounts, COUNCIL_PASSWORD set -> the old shared gate still applies
+      * no accounts, no password -> open (a local single-user install)
+    """
+    user = current_user(token)
+    if user:
+        return user
+    if db.user_count() > 0:
         raise HTTPException(status_code=401, detail="not authenticated")
+    if accounts.single_user_mode():
+        if not token or token not in SHARED_SESSIONS:
+            raise HTTPException(status_code=401, detail="not authenticated")
+    return None
+
+
+def owner_id(user: dict | None) -> str | None:
+    return user["id"] if user else None
+
+
+def _assert_owns(row_owner: str | None, user: dict | None) -> None:
+    """Reject access to another account's data.
+
+    404 rather than 403 on purpose: telling a stranger that a conversation
+    exists but is not theirs is itself a small leak.
+    """
+    if user is None:
+        return  # shared-password or open mode: there is only one person
+    if row_owner != user["id"]:
+        raise HTTPException(404, "no such conversation")
+
+
+@app.post("/api/signup")
+async def signup(request: Request, response: Response):
+    body = await request.json()
+    username = accounts.normalise_username(str(body.get("username", "")))
+    password = str(body.get("password", ""))
+
+    problem = accounts.username_problem(username) or accounts.password_problem(password)
+    if problem:
+        raise HTTPException(400, problem)
+
+    uid = await asyncio.to_thread(db.create_user, username,
+                                  accounts.hash_password(password))
+    if uid is None:
+        raise HTTPException(409, "That username is taken.")
+
+    token = accounts.new_session_token()
+    await asyncio.to_thread(db.create_session, token, uid, accounts.session_expiry())
+    _set_session_cookie(response, token)
+    return {"ok": True, "username": username}
 
 
 @app.post("/api/login")
 async def login(request: Request, response: Response):
     body = await request.json()
+    addr = _addr(request)
+    wait = _login_blocked(addr)
+    if wait > 0:
+        raise HTTPException(429, f"too many failed attempts - try again in {int(wait)}s")
+
+    username = accounts.normalise_username(str(body.get("username", "")))
+    password = str(body.get("password", ""))
+
+    if username:
+        user = await asyncio.to_thread(db.get_user_by_name, username)
+        # Verify even when the user does not exist, against a throwaway hash, so
+        # a missing account cannot be told from a wrong password by timing.
+        stored = user["password_hash"] if user else accounts.hash_password("x" * 12)
+        if not accounts.verify_password(password, stored) or not user:
+            _record_login_failure(addr)
+            raise HTTPException(401, "Wrong username or password.")
+        token = accounts.new_session_token()
+        await asyncio.to_thread(db.create_session, token, user["id"], accounts.session_expiry())
+        _LOGIN_FAILURES.pop(addr, None)
+        _set_session_cookie(response, token)
+        return {"ok": True, "username": user["username"]}
+
+    # Shared-password fallback, only while no account exists.
     expected = os.environ.get("COUNCIL_PASSWORD", "")
     if not expected:
         return {"ok": True, "required": False}
-
-    addr = request.client.host if request.client else "unknown"
-    wait = _login_blocked(addr)
-    if wait > 0:
-        raise HTTPException(
-            status_code=429,
-            detail=f"too many failed attempts - try again in {int(wait)}s",
-        )
-
-    if not secrets.compare_digest(str(body.get("password", "")), expected):
+    if await asyncio.to_thread(db.user_count) > 0:
+        raise HTTPException(400, "This instance uses accounts. Enter a username.")
+    if not secrets.compare_digest(password, expected):
         _record_login_failure(addr)
-        raise HTTPException(status_code=401, detail="wrong password")
+        raise HTTPException(401, "wrong password")
     _LOGIN_FAILURES.pop(addr, None)
     token = secrets.token_urlsafe(32)
-    SESSIONS.add(token)
-    response.set_cookie(
-        "council_session", token, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 30
-    )
+    SHARED_SESSIONS.add(token)
+    _set_session_cookie(response, token)
+    return {"ok": True}
+
+
+@app.post("/api/logout")
+async def logout(response: Response, council_session: str | None = Cookie(default=None)):
+    if council_session:
+        await asyncio.to_thread(db.delete_session, council_session)
+        SHARED_SESSIONS.discard(council_session)
+    response.delete_cookie("council_session")
     return {"ok": True}
 
 
 @app.get("/api/auth-status")
 async def auth_status(council_session: str | None = Cookie(default=None)):
+    user = current_user(council_session)
+    has_accounts = await asyncio.to_thread(db.user_count) > 0
     return {
-        "required": password_required(),
-        "authenticated": (not password_required()) or council_session in SESSIONS,
+        "mode": "accounts" if has_accounts else ("password" if accounts.single_user_mode() else "open"),
+        "required": has_accounts or accounts.single_user_mode(),
+        "authenticated": bool(user) or (council_session in SHARED_SESSIONS),
+        "username": user["username"] if user else None,
+        "can_signup": True,
     }
 
 
@@ -194,29 +289,31 @@ async def auth_status(council_session: str | None = Cookie(default=None)):
 
 @app.get("/api/conversations")
 async def api_list_conversations(council_session: str | None = Cookie(default=None)):
-    check_auth(council_session)
-    return await asyncio.to_thread(db.list_conversations)
+    user = require_user(council_session)
+    return await asyncio.to_thread(db.list_conversations, owner_id(user))
 
 
 @app.post("/api/conversations")
 async def api_create_conversation(council_session: str | None = Cookie(default=None)):
-    check_auth(council_session)
-    cid = await asyncio.to_thread(db.create_conversation)
+    user = require_user(council_session)
+    cid = await asyncio.to_thread(db.create_conversation, "New conversation", owner_id(user))
     return {"id": cid}
 
 
 @app.get("/api/conversations/{cid}")
 async def api_get_conversation(cid: str, council_session: str | None = Cookie(default=None)):
-    check_auth(council_session)
+    user = require_user(council_session)
     conv = await asyncio.to_thread(db.get_conversation, cid)
     if not conv:
         raise HTTPException(404, "no such conversation")
+    _assert_owns(conv.get("user_id"), user)
     return conv
 
 
 @app.delete("/api/conversations/{cid}")
 async def api_delete_conversation(cid: str, council_session: str | None = Cookie(default=None)):
-    check_auth(council_session)
+    user = require_user(council_session)
+    _assert_owns(await asyncio.to_thread(db.conversation_owner, cid), user)
     await asyncio.to_thread(db.delete_conversation, cid)
     return {"ok": True}
 
@@ -225,7 +322,8 @@ async def api_delete_conversation(cid: str, council_session: str | None = Cookie
 async def api_rename_conversation(
     cid: str, request: Request, council_session: str | None = Cookie(default=None)
 ):
-    check_auth(council_session)
+    user = require_user(council_session)
+    _assert_owns(await asyncio.to_thread(db.conversation_owner, cid), user)
     body = await request.json()
     await asyncio.to_thread(db.rename_conversation, cid, str(body.get("title", "")).strip() or "Untitled")
     return {"ok": True}
@@ -239,7 +337,8 @@ async def api_rename_conversation(
 async def api_create_turn(
     cid: str, request: Request, council_session: str | None = Cookie(default=None)
 ):
-    check_auth(council_session)
+    user = require_user(council_session)
+    _assert_owns(await asyncio.to_thread(db.conversation_owner, cid), user)
     body = await request.json()
     question = str(body.get("prompt", "")).strip()
     mode = str(body.get("mode", "moa"))
@@ -278,7 +377,8 @@ async def api_cancel_turn(turn_id: str, council_session: str | None = Cookie(def
     way to abandon a run you regret is to close the tab and let it keep
     spending rate limit in the background.
     """
-    check_auth(council_session)
+    user = require_user(council_session)
+    _assert_owns(await asyncio.to_thread(db.turn_owner, turn_id), user)
     bus = BUSES.get(turn_id)
     if bus is None or bus.task is None or bus.task.done():
         return {"ok": False, "reason": "not running"}
@@ -290,7 +390,8 @@ async def api_cancel_turn(turn_id: str, council_session: str | None = Cookie(def
 async def api_stream(
     turn_id: str, after: int = 0, council_session: str | None = Cookie(default=None)
 ):
-    check_auth(council_session)
+    user = require_user(council_session)
+    _assert_owns(await asyncio.to_thread(db.turn_owner, turn_id), user)
     turn = await asyncio.to_thread(db.get_turn, turn_id)
     if not turn:
         raise HTTPException(404, "no such turn")
@@ -356,7 +457,8 @@ async def api_turn_events(
     turn_id: str, after: int = 0, council_session: str | None = Cookie(default=None)
 ):
     """Non-streaming fallback, and how the UI rebuilds a past turn's detail view."""
-    check_auth(council_session)
+    user = require_user(council_session)
+    _assert_owns(await asyncio.to_thread(db.turn_owner, turn_id), user)
     return await asyncio.to_thread(db.events_since, turn_id, after)
 
 
@@ -366,7 +468,7 @@ async def api_turn_events(
 
 @app.get("/api/health")
 async def api_health(council_session: str | None = Cookie(default=None)):
-    check_auth(council_session)
+    require_user(council_session)
     configured = providers.configured_providers()
     usable = config.available_proposers()
     return {
@@ -390,7 +492,7 @@ async def api_health(council_session: str | None = Cookie(default=None)):
 @app.get("/api/providers")
 async def api_providers(council_session: str | None = Cookie(default=None)):
     """Which free providers exist, and which you have keys for."""
-    check_auth(council_session)
+    require_user(council_session)
     return [
         {"key": p.key, "label": p.label, "env_var": p.env_var,
          "signup": p.signup, "notes": p.notes, "configured": p.configured()}
@@ -402,7 +504,7 @@ async def api_providers(council_session: str | None = Cookie(default=None)):
 async def api_models_check(council_session: str | None = Cookie(default=None)):
     """Validate every slug in config.py against OpenRouter's live catalogue.
     Hit this first if a run dies with 'model not found'."""
-    check_auth(council_session)
+    require_user(council_session)
     return await check_configured_models()
 
 
@@ -410,7 +512,7 @@ async def api_models_check(council_session: str | None = Cookie(default=None)):
 async def api_models(provider: str = "groq", q: str = "",
                      council_session: str | None = Cookie(default=None)):
     """List one provider's live catalogue -- use this to fix a stale slug."""
-    check_auth(council_session)
+    require_user(council_session)
     try:
         models = await list_models(provider)
     except Exception as exc:
