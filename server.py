@@ -12,6 +12,7 @@ import asyncio
 import json
 import os
 import secrets
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -109,6 +110,28 @@ async def execute_turn(turn_id: str, conversation_id: str, mode: str, question: 
 
 SESSIONS: set[str] = set()
 
+# Failed login attempts per client address. Password strength is only half the
+# story -- an unthrottled login form lets a script try millions of guesses, and
+# a passphrase a human can type on a phone is not meant to survive that. With
+# throttling, even a modest passphrase is far out of reach.
+_LOGIN_FAILURES: dict[str, list[float]] = {}
+_LOGIN_WINDOW = 300.0     # seconds
+_LOGIN_MAX_TRIES = 8      # per window, per address
+
+
+def _login_blocked(addr: str) -> float:
+    """Seconds the caller must wait, or 0 if they may try."""
+    now = time.monotonic()
+    tries = [t for t in _LOGIN_FAILURES.get(addr, []) if now - t < _LOGIN_WINDOW]
+    _LOGIN_FAILURES[addr] = tries
+    if len(tries) < _LOGIN_MAX_TRIES:
+        return 0.0
+    return _LOGIN_WINDOW - (now - tries[0])
+
+
+def _record_login_failure(addr: str) -> None:
+    _LOGIN_FAILURES.setdefault(addr, []).append(time.monotonic())
+
 
 def password_required() -> bool:
     return bool(os.environ.get("COUNCIL_PASSWORD", "").strip())
@@ -127,8 +150,19 @@ async def login(request: Request, response: Response):
     expected = os.environ.get("COUNCIL_PASSWORD", "")
     if not expected:
         return {"ok": True, "required": False}
+
+    addr = request.client.host if request.client else "unknown"
+    wait = _login_blocked(addr)
+    if wait > 0:
+        raise HTTPException(
+            status_code=429,
+            detail=f"too many failed attempts - try again in {int(wait)}s",
+        )
+
     if not secrets.compare_digest(str(body.get("password", "")), expected):
+        _record_login_failure(addr)
         raise HTTPException(status_code=401, detail="wrong password")
+    _LOGIN_FAILURES.pop(addr, None)
     token = secrets.token_urlsafe(32)
     SESSIONS.add(token)
     response.set_cookie(

@@ -130,6 +130,17 @@ Look for `IPv4 Address` (something like `192.168.1.x`), then open
 network. Windows Firewall will probably prompt the first time — allow it for
 private networks.
 
+**Set a password first.** Anyone on the same network can otherwise open the URL
+and spend your API quota:
+
+```
+COUNCIL_PASSWORD=some-long-passphrase
+```
+
+The login is throttled to 8 failed attempts per address per 5 minutes, which is
+what makes a human-typeable passphrase safe here -- password strength alone does
+not help against an unthrottled form.
+
 **From anywhere.** Use a tunnel:
 
 ```bash
