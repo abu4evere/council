@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#141413">
+<title>Council AI — five models answer, then argue about it</title>
+<meta name="description" content="Most AI gives you one answer. Council AI runs five models from different vendors against the same question, then makes them debate it — and ends by naming the decisions you still have to make.">
+<meta property="og:title" content="Council AI">
+<meta property="og:description" content="Five models answer. Then they argue. You get the questions you didn't know to ask.">
+<meta property="og:type" content="website">
+<link rel="stylesheet" href="/static/landing.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9878;</text></svg>">
+</head>
+<body>
+
+<header class="nav" id="nav">
+  <a class="brand" href="/">
+    <span class="brand-mark">&#9878;</span>
+    <span>Council&nbsp;AI</span>
+  </a>
+  <nav class="nav-links">
+    <a href="#how">How it works</a>
+    <a href="#proof">Why five</a>
+    <a href="#modes">Modes</a>
+    <a href="https://github.com/abu4evere/council" target="_blank" rel="noopener">Source</a>
+  </nav>
+  <div class="nav-cta">
+    <a class="btn ghost" href="/app?mode=login">Sign in</a>
+    <a class="btn solid" href="/app?mode=signup">Get started</a>
+  </div>
+</header>
+
+<main>
+
+  <!-- ─────────────────────────── hero ─────────────────────────── -->
+  <section class="hero">
+    <div class="reveal">
+      <p class="eyebrow">Multi&#8209;model deliberation</p>
+      <h1>
+        One model tells you what you asked.<br>
+        <span class="accent">Five models tell you what you missed.</span>
+      </h1>
+      <p class="lede">
+        Council AI puts your question to five models from four different vendors
+        at once, then makes them argue about the answer. You get one merged
+        response &mdash; and a list of the decisions you still have to make.
+      </p>
+      <div class="hero-cta">
+        <a class="btn solid lg" href="/app?mode=signup">Start asking</a>
+        <a class="btn ghost lg" href="https://github.com/abu4evere/council" target="_blank" rel="noopener">Read the source</a>
+      </div>
+      <p class="hero-note">Free and open source &middot; runs on free API tiers &middot; no card</p>
+    </div>
+
+    <div class="hero-art reveal" style="--d:.12s">
+      <div class="term">
+        <div class="term-bar"><i></i><i></i><i></i><span>council</span></div>
+        <div class="term-body">
+          <p class="term-q">Should I build one large project or five small ones?</p>
+          <div class="term-grid">
+            <div class="chip" style="--c:#c96442"><b>Pragmatist</b><span>gpt&#8209;oss&#8209;120b</span></div>
+            <div class="chip" style="--c:#5b8def"><b>Systems</b><span>gemini&#8209;3.8</span></div>
+            <div class="chip" style="--c:#3fa87a"><b>Contrarian</b><span>qwen&#8209;3.8</span></div>
+            <div class="chip" style="--c:#a855c7"><b>Operator</b><span>gemma&#8209;4</span></div>
+            <div class="chip" style="--c:#d4a02c"><b>Skeptic</b><span>kimi&#8209;k3</span></div>
+          </div>
+          <div class="term-line"><span class="pulse"></span> round 2 of 3 &mdash; critique <em>1:47</em></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── problem ─────────────────────────── -->
+  <section class="band">
+    <div class="wrap narrow reveal">
+      <h2>The answer was never the hard part</h2>
+      <p class="big">
+        Ask one model how to build something and it will tell you. Confidently.
+        What it will not tell you is which assumption it quietly made on your
+        behalf, or which decision you have not realised you are about to make.
+      </p>
+      <p class="big dim">
+        Council AI is built around that gap. Every run ends with
+        <b class="accent">Decide these</b> &mdash; the questions you did not think
+        to ask, ordered by how much depends on them.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── how ─────────────────────────── -->
+  <section id="how" class="wrap">
+    <h2 class="center reveal">How it works</h2>
+    <div class="steps">
+      <article class="step reveal">
+        <span class="step-n">1</span>
+        <h3>Five models, five instructions</h3>
+        <p>
+          The same question goes to five models at once &mdash; each given a
+          <em>conflicting</em> brief. One optimises for shipping this week.
+          One assumes the premise is wrong. One asks what nobody has accounted for.
+        </p>
+      </article>
+      <article class="step reveal" style="--d:.08s">
+        <span class="step-n">2</span>
+        <h3>One merges them</h3>
+        <p>
+          A sixth model reads every proposal and resolves the contradictions
+          instead of averaging them. Where two models disagree, it picks and
+          says why the other loses.
+        </p>
+      </article>
+      <article class="step reveal" style="--d:.16s">
+        <span class="step-n">3</span>
+        <h3>Then they argue</h3>
+        <p>
+          A Drafter writes the plan, a Critic on a different vendor attacks it,
+          the Drafter revises. Three rounds. A Judge rules. A model cannot see
+          the blind spots that produced its own flaws &mdash; so it never reviews itself.
+        </p>
+      </article>
+    </div>
+    <figure class="arch reveal">
+      <img src="/static/architecture.svg" alt="Request flow: five parallel models, a merge step, three debate rounds, then the answer">
+    </figure>
+  </section>
+
+  <!-- ─────────────────────────── proof ─────────────────────────── -->
+  <section id="proof" class="band">
+    <div class="wrap">
+      <h2 class="center reveal">Why five and not one</h2>
+      <p class="center sub reveal">
+        Four models given an identical prompt return four similar answers, and
+        merging those produces mush. So they are told to disagree. This is a real
+        run, unedited.
+      </p>
+      <p class="quoted-q reveal">&ldquo;I want to build a habit tracker app. What should I build first?&rdquo;</p>
+      <div class="quotes">
+        <blockquote class="reveal" style="--c:#c96442">
+          <header><b>Pragmatist</b><span>groq &middot; gpt&#8209;oss&#8209;120b</span></header>
+          <p>Ship a single&#8209;page web app with localStorage and persist it in the
+          browser. Host on Netlify, free, today. No build tools, no backend, no
+          authentication &mdash; literally three files.</p>
+        </blockquote>
+        <blockquote class="reveal" style="--c:#3fa87a; --d:.1s">
+          <header><b>Contrarian</b><span>cerebras &middot; qwen&#8209;3.8&#8209;27b</span></header>
+          <p>Don&rsquo;t build a tracker. Build a retention engine. 99% of habit apps
+          fail on churn, not features. Your beautiful grid is a dead artifact if
+          the user never returns on day four.</p>
+        </blockquote>
+      </div>
+      <p class="center note reveal">
+        Same question. Same second. Opposite advice. The merge keeps what
+        survives contact with the other.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── modes ─────────────────────────── -->
+  <section id="modes" class="wrap">
+    <h2 class="center reveal">Three depths</h2>
+    <div class="modes">
+      <div class="mode reveal">
+        <h3>Quick</h3>
+        <p class="time">~40 seconds</p>
+        <p>Five models in parallel, then a merge. For a question you want a real answer to now.</p>
+      </div>
+      <div class="mode featured reveal" style="--d:.08s">
+        <span class="tag">Most used</span>
+        <h3>Debate</h3>
+        <p class="time">~4 minutes</p>
+        <p>Drafter versus Critic across three rounds, then a verdict. For a plan that has to survive scrutiny.</p>
+      </div>
+      <div class="mode reveal" style="--d:.16s">
+        <h3>Full</h3>
+        <p class="time">~7 minutes</p>
+        <p>Quick, then the debate runs on the merged plan. For decisions you will live with for months.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── memory ─────────────────────────── -->
+  <section class="band">
+    <div class="wrap narrow reveal">
+      <h2>It remembers your projects</h2>
+      <p class="big">
+        Point Council at a folder of markdown notes &mdash; an Obsidian vault is
+        exactly that &mdash; and it searches them before every run. Stop pasting
+        the same context into every prompt.
+      </p>
+      <p class="big dim">
+        Every run shows precisely which notes it used. Private folders are never
+        indexed. Nothing leaves quietly.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── cta ─────────────────────────── -->
+  <section class="wrap final reveal">
+    <h2>Ask something you actually care about</h2>
+    <p>Free to use. Free to self&#8209;host. The source is right there.</p>
+    <div class="hero-cta center-cta">
+      <a class="btn solid lg" href="/app?mode=signup">Create an account</a>
+      <a class="btn ghost lg" href="/app?mode=login">Sign in</a>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <span>&#9878; Council AI</span>
+  <span class="dot-sep">&middot;</span>
+  <a href="https://github.com/abu4evere/council" target="_blank" rel="noopener">GitHub</a>
+  <span class="dot-sep">&middot;</span>
+  <span>MIT licensed</span>
+</footer>
+
+<script src="/static/landing.js"></script>
+</body>
+</html>

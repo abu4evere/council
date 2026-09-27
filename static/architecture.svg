@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 560" width="820" height="560" font-family="ui-sans-serif, -apple-system, Segoe UI, Inter, sans-serif">
+  <style>
+    .bg    { fill: #141413; }
+    .card  { fill: #1c1c1a; stroke: #302f2c; }
+    .lane  { fill: #191917; stroke: #262523; stroke-dasharray: 4 4; }
+    .t     { fill: #f0eee6; font-size: 13px; font-weight: 600; }
+    .s     { fill: #a5a29a; font-size: 11px; }
+    .f     { fill: #6e6b63; font-size: 10px; }
+    .hdr   { fill: #c96442; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+    .arrow { stroke: #4a4844; stroke-width: 1.5; fill: none; marker-end: url(#a); }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4a4844"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="820" height="560"/>
+
+  <text class="hdr" x="32" y="34">COUNCIL AI — REQUEST FLOW</text>
+
+  <!-- prompt -->
+  <rect class="card" x="32" y="52" width="180" height="46" rx="10"/>
+  <text class="t" x="48" y="72">Your question</text>
+  <text class="f" x="48" y="88">browser · phone or laptop</text>
+
+  <!-- stage 1 -->
+  <rect class="lane" x="32" y="122" width="756" height="150" rx="12"/>
+  <text class="hdr" x="48" y="144">1 — FAN OUT, IN PARALLEL</text>
+  <text class="s" x="48" y="162">Five models, five conflicting framings, four different vendors.</text>
+
+  <rect class="card" x="48" y="176" width="138" height="76" rx="9"/>
+  <circle cx="64" cy="196" r="4" fill="#c96442"/>
+  <text class="t" x="76" y="200">Pragmatist</text>
+  <text class="f" x="62" y="218">groq</text>
+  <text class="f" x="62" y="232">gpt-oss-120b</text>
+  <text class="s" x="62" y="246">“ship it this week”</text>
+
+  <rect class="card" x="198" y="176" width="138" height="76" rx="9"/>
+  <circle cx="214" cy="196" r="4" fill="#5b8def"/>
+  <text class="t" x="226" y="200">Systems</text>
+  <text class="f" x="212" y="218">gemini</text>
+  <text class="f" x="212" y="232">gemini-3.8-flash</text>
+  <text class="s" x="212" y="246">“what breaks later?”</text>
+
+  <rect class="card" x="348" y="176" width="138" height="76" rx="9"/>
+  <circle cx="364" cy="196" r="4" fill="#3fa87a"/>
+  <text class="t" x="376" y="200">Contrarian</text>
+  <text class="f" x="362" y="218">cerebras</text>
+  <text class="f" x="362" y="232">qwen-3.8-27b</text>
+  <text class="s" x="362" y="246">“the premise is wrong”</text>
+
+  <rect class="card" x="498" y="176" width="138" height="76" rx="9"/>
+  <circle cx="514" cy="196" r="4" fill="#a855c7"/>
+  <text class="t" x="526" y="200">Operator</text>
+  <text class="f" x="512" y="218">gemini</text>
+  <text class="f" x="512" y="232">gemma-4-31b-it</text>
+  <text class="s" x="512" y="246">“cost, 2am debugging”</text>
+
+  <rect class="card" x="648" y="176" width="124" height="76" rx="9"/>
+  <circle cx="664" cy="196" r="4" fill="#d4a02c"/>
+  <text class="t" x="676" y="200">Skeptic</text>
+  <text class="f" x="662" y="218">nvidia</text>
+  <text class="f" x="662" y="232">kimi-k3</text>
+  <text class="s" x="662" y="246">“what’s missing?”</text>
+
+  <!-- stage 2 -->
+  <rect class="lane" x="32" y="292" width="360" height="98" rx="12"/>
+  <text class="hdr" x="48" y="314">2 — MERGE</text>
+  <rect class="card" x="48" y="326" width="328" height="50" rx="9"/>
+  <text class="t" x="64" y="346">Synthesis</text>
+  <text class="s" x="64" y="364">Resolves contradictions. Does not average them.</text>
+
+  <!-- stage 3 -->
+  <rect class="lane" x="412" y="292" width="376" height="98" rx="12"/>
+  <text class="hdr" x="428" y="314">3 — DEBATE  ×3 ROUNDS</text>
+  <rect class="card" x="428" y="326" width="108" height="50" rx="9"/>
+  <text class="t" x="444" y="346">Drafter</text>
+  <text class="f" x="444" y="364">writes the plan</text>
+  <rect class="card" x="546" y="326" width="108" height="50" rx="9"/>
+  <text class="t" x="562" y="346">Critic</text>
+  <text class="f" x="562" y="364">deepseek</text>
+  <rect class="card" x="664" y="326" width="108" height="50" rx="9"/>
+  <text class="t" x="680" y="346">Judge</text>
+  <text class="f" x="680" y="364">the verdict</text>
+  <path class="arrow" d="M536,341 L544,341"/>
+  <path class="arrow" d="M654,341 L662,341"/>
+  <path class="arrow" d="M600,380 C600,398 482,398 482,382" stroke-dasharray="3 3"/>
+  <text class="f" x="512" y="404">revise, ×3</text>
+
+  <!-- output -->
+  <rect class="card" x="32" y="426" width="756" height="62" rx="10" stroke="#c96442"/>
+  <text class="t" x="48" y="450">The answer — plus DECIDE THESE</text>
+  <text class="s" x="48" y="470">The questions you had not thought to ask. This section is the point of the tool, not a footnote.</text>
+
+  <!-- persistence note -->
+  <text class="f" x="48" y="516">Every token is persisted with a sequence number, so a phone that drops off Wi-Fi mid-run reconnects with ?after=&lt;seq&gt; and replays only what it missed.</text>
+  <text class="f" x="48" y="534">Seats whose provider has no key are skipped, not failed. One dead model never takes down a run.</text>
+
+  <path class="arrow" d="M122,100 L122,120"/>
+  <path class="arrow" d="M212,274 L212,290"/>
+  <path class="arrow" d="M392,341 L410,341"/>
+  <path class="arrow" d="M600,274 L600,290"/>
+  <path class="arrow" d="M410,392 L410,424"/>
+</svg>

@@ -17,7 +17,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import Cookie, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import (FileResponse, JSONResponse, RedirectResponse,
+                               StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
@@ -543,7 +544,19 @@ async def api_models(provider: str = "groq", q: str = "",
 # ---------------------------------------------------------------------------
 
 @app.get("/")
-async def index():
+async def landing(council_session: str | None = Cookie(default=None)):
+    """Marketing page for visitors; straight to the app if already signed in.
+
+    Someone who is already logged in does not need to be sold the product they
+    are using, so they skip it.
+    """
+    if current_user(council_session) or council_session in SHARED_SESSIONS:
+        return RedirectResponse("/app", status_code=302)
+    return FileResponse(STATIC / "landing.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/app")
+async def app_page():
     return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-store"})
 
 
@@ -559,7 +572,7 @@ async def no_cache_static(request: Request, call_next):
     the caching ever saves on a localhost app.
     """
     response = await call_next(request)
-    if request.url.path.startswith("/static") or request.url.path == "/":
+    if request.url.path.startswith("/static") or request.url.path in ("/", "/app"):
         response.headers["Cache-Control"] = "no-store, must-revalidate"
     return response
 

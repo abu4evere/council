@@ -697,9 +697,13 @@ async function boot() {
     const st = await api("/api/auth-status");
     if (st.required && !st.authenticated) {
       showLogin();
-      // A fresh instance with no accounts yet should open on "create account",
-      // because there is nothing to sign in to.
-      setAuthMode(st.mode === "accounts" ? "login" : "signup");
+      // The landing page's two buttons say which tab the visitor asked for.
+      // Falling back: a fresh instance with no accounts opens on "create
+      // account", because there is nothing yet to sign in to.
+      const asked = new URLSearchParams(location.search).get("mode");
+      setAuthMode(asked === "signup" || asked === "login"
+        ? asked
+        : (st.mode === "accounts" ? "login" : "signup"));
       return;
     }
     showApp();
