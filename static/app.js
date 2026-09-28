@@ -11,6 +11,7 @@ const el = (tag, cls, txt) => {
 const state = {
   conversationId: null,
   mode: "moa",
+  challenge: "medium",
   running: false,
   stream: null,        // live EventSource
   lastSeq: 0,          // for reconnect
@@ -365,6 +366,7 @@ async function renderPastTurn(t) {
   } catch {}
 
   if (t.status === "done" && t.final_answer) {
+    collapseRun(turn);
     turn.appendChild(finalBlock(t.final_answer));
   } else if (t.status === "error") {
     turn.appendChild(el("div", "failed", t.error || "This run failed."));
@@ -409,6 +411,49 @@ function disagreementBlock(points) {
     box.appendChild(item);
   }
   return box;
+}
+
+/* A one-line account of what happened, in place of the raw pipeline.
+   "5 agents participated, 1 failed, 3 disagreements" tells a reader everything
+   they need; the twelve streaming panels underneath tell them nothing they
+   asked for. The panels stay -- behind a toggle -- because when a run goes
+   wrong the detail is the only thing that helps. */
+function runSummary(turnEl) {
+  const wrap = turnEl.querySelector(".agents-wrap");
+  if (!wrap) return null;
+  const panels = [...wrap.querySelectorAll(".agent")];
+  const done = panels.filter((p) => p.querySelector(".agent-status.done")).length;
+  const failed = panels.filter((p) => p.querySelector(".agent-status.error")).length;
+  const skipped = panels.filter((p) => p.querySelector(".agent-status.skipped")).length;
+  const disagreements = turnEl.querySelectorAll(".disagree-item").length;
+
+  const bar = el("div", "run-summary");
+  const bits = [];
+  if (done) bits.push(`${done} model${done === 1 ? "" : "s"} answered`);
+  if (failed) bits.push(`${failed} failed`);
+  if (skipped) bits.push(`${skipped} skipped`);
+  if (disagreements) bits.push(`${disagreements} disagreement${disagreements === 1 ? "" : "s"}`);
+  bar.appendChild(el("span", "run-summary-text", bits.join(" · ") || "run complete"));
+
+  const toggle = el("button", "run-toggle", "Show the debate");
+  toggle.addEventListener("click", () => {
+    const open = wrap.classList.toggle("revealed");
+    toggle.textContent = open ? "Hide the debate" : "Show the debate";
+  });
+  bar.appendChild(toggle);
+  return bar;
+}
+
+/* Collapse the machinery once a run ends, and put the summary in its place.
+   During the run the panels stay open, because watching five models work IS
+   the reassurance that a seven-minute wait needs. The moment there is an
+   answer, that reassurance has done its job and becomes clutter. */
+function collapseRun(turnEl) {
+  const wrap = turnEl.querySelector(".agents-wrap");
+  if (!wrap || wrap.classList.contains("collapsed")) return;
+  wrap.classList.add("collapsed");
+  const summary = runSummary(turnEl);
+  if (summary) wrap.parentNode.insertBefore(summary, wrap);
 }
 
 function finalBlock(text) {
@@ -617,6 +662,7 @@ function handleEvent(ev, agentsBox, turnEl) {
       break;
 
     case "done":
+      collapseRun(turnEl);
       turnEl.appendChild(finalBlock(ev.final_answer));
       setStage(null);
       scrollDown();
@@ -624,6 +670,8 @@ function handleEvent(ev, agentsBox, turnEl) {
       break;
 
     case "failed":
+      // A failed run is the one case where the detail is the point, so the
+      // machinery stays open.
       turnEl.appendChild(el("div", "failed", ev.error || "This run failed."));
       setStage(null);
       break;
@@ -650,7 +698,7 @@ async function send() {
   try {
     const { turn_id } = await api(`/api/conversations/${state.conversationId}/turns`, {
       method: "POST",
-      body: JSON.stringify({ prompt, mode: state.mode }),
+      body: JSON.stringify({ prompt, mode: state.mode, challenge: state.challenge }),
     });
     attachStream(turn_id, turn);
   } catch (err) {
@@ -694,6 +742,25 @@ $("#modes").addEventListener("click", (e) => {
   btn.classList.add("active");
   state.mode = btn.dataset.mode;
 });
+
+$("#challenge").addEventListener("click", (e) => {
+  const b = e.target.closest(".chal");
+  if (!b) return;
+  document.querySelectorAll(".chal").forEach((x) => x.classList.remove("active"));
+  b.classList.add("active");
+  state.challenge = b.dataset.level;
+  // Remembered per browser: a preference, not shared state.
+  try { localStorage.setItem("council_challenge", state.challenge); } catch {}
+});
+
+try {
+  const saved = localStorage.getItem("council_challenge");
+  if (saved && ["low", "medium", "high"].includes(saved)) {
+    state.challenge = saved;
+    document.querySelectorAll(".chal").forEach((x) =>
+      x.classList.toggle("active", x.dataset.level === saved));
+  }
+} catch {}
 
 $("#new-chat").addEventListener("click", newConversation);
 

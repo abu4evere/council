@@ -91,10 +91,17 @@
         <button id="stop" class="stop-btn" title="Stop this run">stop</button>
       </div>
       <div class="composer">
-        <div class="modes" id="modes">
-          <button data-mode="moa" class="mode active">Quick</button>
-          <button data-mode="debate" class="mode">Debate</button>
-          <button data-mode="full" class="mode">Full</button>
+        <div class="composer-controls">
+          <div class="modes" id="modes">
+            <button data-mode="moa" class="mode active">Quick</button>
+            <button data-mode="debate" class="mode">Debate</button>
+            <button data-mode="full" class="mode">Full</button>
+          </div>
+          <div class="challenge" id="challenge" title="How hard the council pushes back">
+            <button data-level="low" class="chal">Gentle</button>
+            <button data-level="medium" class="chal active">Balanced</button>
+            <button data-level="high" class="chal">Brutal</button>
+          </div>
         </div>
         <div class="input-row">
           <textarea id="prompt" rows="1" placeholder="Describe the problem or the project..."></textarea>

@@ -99,7 +99,8 @@ def load_user_keys(user_id: str | None) -> dict:
 
 async def execute_turn(turn_id: str, conversation_id: str, mode: str, question: str,
                        user_keys: dict | None = None,
-                       turn_owner_id: str | None = None) -> None:
+                       turn_owner_id: str | None = None,
+                       challenge: str = "medium") -> None:
     bus = BUSES[turn_id]
     try:
         prior = await asyncio.to_thread(
@@ -118,7 +119,7 @@ async def execute_turn(turn_id: str, conversation_id: str, mode: str, question: 
                            "chars": len(n.body)} for n in notes],
             })
             memory = vault.as_context(notes) + "\n" + memory
-        orch = Orchestrator(bus.emit, memory=memory)
+        orch = Orchestrator(bus.emit, memory=memory, challenge=challenge)
         # Every provider call inside this block sees this user's keys.
         with keyring.use_keys(user_keys or {}):
             answer = await orch.run(mode, question)
@@ -380,6 +381,9 @@ async def api_create_turn(
     body = await request.json()
     question = str(body.get("prompt", "")).strip()
     mode = str(body.get("mode", "moa"))
+    challenge = str(body.get("challenge", "medium")).lower()
+    if challenge not in ("low", "medium", "high"):
+        challenge = "medium"
     if not question:
         raise HTTPException(400, "prompt is empty")
     if mode not in ("moa", "debate", "full"):
@@ -406,7 +410,8 @@ async def api_create_turn(
     bus = RunBus(turn_id)
     BUSES[turn_id] = bus
     bus.task = asyncio.create_task(
-        execute_turn(turn_id, cid, mode, question, user_keys, owner_id(user)))
+        execute_turn(turn_id, cid, mode, question, user_keys, owner_id(user),
+                     challenge))
     return {"turn_id": turn_id}
 
 
