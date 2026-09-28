@@ -158,6 +158,25 @@ that authenticates but lacks permission is the worst kind of failure -- a
 GitHub token missing the `Models` scope returns a plain-text `200 OK` that
 parses as an empty answer, which looks exactly like success.
 
+## Decision memos
+
+Every finished run exports as a markdown memo: the question, what is still
+undecided, where the models disagreed and how it resolved, the full answer, and
+an honest record of which seats answered, which failed and which notes were
+recalled.
+
+A chat log is not a record. Three weeks after deciding something you want to
+know what you decided, what the alternatives were and what you knew at the
+time, and scrolling a transcript gives you none of that quickly. A memo is a
+file: diffable, greppable, readable without running anything.
+
+**Save to vault** writes it into your notes, which closes the loop -- a memo is
+indexed like any other note, so a decision made in March is retrieved
+automatically when you ask something related in June.
+
+No model is called to build a memo. It is assembled from what the run already
+produced, so it costs nothing and cannot fail on a rate limit.
+
 ## Long-term memory (optional)
 
 Point Council at a folder of markdown notes and it searches them before every

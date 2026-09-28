@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv()
 
 import db  # noqa: E402
-from engine import (accounts, config, disagreement, keyring, prompts,
+from engine import (accounts, config, disagreement, keyring, memo, prompts,
                     providers, vault)  # noqa: E402
 from engine.llm import check_configured_models, list_models  # noqa: E402
 from engine.orchestrator import Orchestrator  # noqa: E402
@@ -747,6 +747,46 @@ async def _probe_key(provider: str, key: str) -> tuple[bool, str]:
             return True, f"{len(models)} models available"
         except Exception as exc:
             return False, str(exc)[:140]
+
+
+@app.get("/api/turns/{turn_id}/memo")
+async def api_turn_memo(turn_id: str, save: int = 0,
+                        council_session: str | None = Cookie(default=None)):
+    """A finished run as a markdown decision memo.
+
+    With ?save=1 it is also written into the user's vault, which makes it
+    searchable memory for later runs -- decide something in March, ask a
+    related question in June, and the March reasoning comes back on its own.
+    """
+    user = require_user(council_session)
+    _assert_owns(await asyncio.to_thread(db.turn_owner, turn_id), user)
+    turn = await asyncio.to_thread(db.get_turn, turn_id)
+    if not turn:
+        raise HTTPException(404, "no such turn")
+    if turn["status"] != "done":
+        raise HTTPException(400, "that run did not finish, so there is nothing to record")
+
+    events = await asyncio.to_thread(db.events_since, turn_id, 0)
+    text = memo.build(turn, events)
+    name = memo.filename_for(turn)
+
+    saved_to = None
+    if save:
+        root = _user_vault_root(owner_id(user))
+        if root is None:
+            raise HTTPException(400, "Set a memory folder first, under API keys.")
+        folder = root / "Decisions"
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / name
+            await asyncio.to_thread(path.write_text, text, "utf-8")
+            saved_to = str(path)
+            # Re-index so the memo is retrievable by the next question.
+            await asyncio.to_thread(_reindex_vault, owner_id(user))
+        except OSError as exc:
+            raise HTTPException(400, f"could not write the memo: {exc}")
+
+    return {"filename": name, "markdown": text, "saved_to": saved_to}
 
 
 @app.get("/api/vault")

@@ -313,6 +313,7 @@ function agentPanel(container, key, info, isStart) {
 async function renderPastTurn(t) {
   const thread = $("#thread");
   const turn = buildTurnShell(t.user_prompt, t.mode);
+  turn.dataset.turnId = t.id;
   thread.appendChild(turn);
   const agentsBox = turn.querySelector(".agents-wrap");
 
@@ -479,10 +480,46 @@ function collapseRun(turnEl) {
   if (summary) wrap.parentNode.insertBefore(summary, wrap);
 }
 
+/* Export a run as a memo. The turn id is read off the DOM rather than kept in
+   module state, so this still works on a conversation reopened days later. */
+async function exportMemo(node, save) {
+  const turnEl = node.closest(".turn");
+  const id = turnEl && turnEl.dataset.turnId;
+  if (!id) { toast("This run has no saved record yet."); return; }
+  try {
+    const r = await api(`/api/turns/${id}/memo${save ? "?save=1" : ""}`);
+    if (save) {
+      toast(`Saved to your vault: ${r.filename}`, 5000);
+      return;
+    }
+    // Downloaded rather than shown: the point of a memo is that it is a file.
+    const blob = new Blob([r.markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = r.filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast(`Downloaded ${r.filename}`);
+  } catch (err) {
+    toast(err.message, 6000);
+  }
+}
+
 function finalBlock(text) {
   const box = el("div", "final");
   const head = el("div", "final-head");
   head.appendChild(el("span", "", "Answer"));
+  const memoBtn = el("button", "final-copy", "Memo");
+  memoBtn.title = "Export this run as a markdown decision memo";
+  memoBtn.addEventListener("click", () => exportMemo(box, false));
+  head.appendChild(memoBtn);
+
+  const saveBtn = el("button", "final-copy", "Save to vault");
+  saveBtn.title = "Write the memo into your notes, where later runs can find it";
+  saveBtn.addEventListener("click", () => exportMemo(box, true));
+  head.appendChild(saveBtn);
+
   const copy = el("button", "final-copy", "Copy");
   copy.addEventListener("click", () => {
     navigator.clipboard.writeText(text).then(
@@ -728,6 +765,7 @@ async function send() {
       method: "POST",
       body: JSON.stringify({ prompt, mode: state.mode, challenge: state.challenge }),
     });
+    turn.dataset.turnId = turn_id;
     attachStream(turn_id, turn);
   } catch (err) {
     turn.appendChild(el("div", "failed", err.message));
