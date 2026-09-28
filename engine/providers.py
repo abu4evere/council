@@ -164,10 +164,15 @@ PROVIDERS: dict[str, Provider] = {
         base_url="https://api.sambanova.ai/v1",
         env_var="SAMBANOVA_API_KEY",
         signup="https://cloud.sambanova.ai/apis",
-        notes="Free tier, no card. Serves LLAMA models -- a family you do not "
-              "otherwise have.",
+        notes="Free tier, no card. Brings Llama and MiniMax, and runs duplicates "
+              "of other families on a separate rate-limit bucket.",
         max_parallel=2,
-        alternates=(),   # run check_key.py to discover; slugs unverified
+        # Verified 2026-09-27 from SambaNova's PUBLIC /models endpoint, which
+        # needs no key. Llama and MiniMax are families nothing else here has;
+        # the rest duplicate other providers but on their own quota.
+        alternates=("Meta-Llama-3.3-70B-Instruct", "MiniMax-M3",
+                    "DeepSeek-V3.2", "MiniMax-M2.7", "gpt-oss-120b"),
+        token_cap=8000,
     ),
     "nvidia": Provider(
         key="nvidia",
