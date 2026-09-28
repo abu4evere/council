@@ -166,7 +166,18 @@ PROVIDERS: dict[str, Provider] = {
         base_url="https://openrouter.ai/api/v1",
         env_var="OPENROUTER_API_KEY",
         signup="https://openrouter.ai/keys",
-        notes="Use ':free' model slugs to pay nothing. Low daily cap without credit.",
+        # Verified 2026-09-27 against OpenRouter's public /models endpoint.
+        # Only families this roster lacks are listed; the gemma, qwen and
+        # nemotron free slugs duplicate models already reachable elsewhere.
+        alternates=("nvidia/nemotron-3-ultra-550b-a55b:free",
+                    "cohere/north-mini-code:free",
+                    "thinkingmachines/inkling:free",
+                    "liquid/lfm-2.5-2.6b:free"),
+        notes="Its ':free' slugs cost nothing. Verified 2026-09-27 from the PUBLIC "
+              "/models listing: there are NO free Llama or Mistral models, despite "
+              "that being widely claimed. What it does add are families nothing "
+              "else here has -- Cohere, Liquid, Thinking Machines -- plus "
+              "nemotron-3-ultra-550b, a 550B model, free.",
     ),
     "sambanova": Provider(
         key="sambanova",
