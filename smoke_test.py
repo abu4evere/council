@@ -397,7 +397,42 @@ async def main():
         print(f"[FAIL] reply instruction: silent={english_silent} "
               f"names={names_lang} protects={protects_code}")
 
-    # 19. Memory preamble must survive being passed through a real run.
+    # 20. PAID SEATS must be off unless explicitly enabled, and must never be
+    #     enabled by accident. Switching them on with no credit on the account
+    #     makes every Synthesis fail with a 402 -- worse than the free model it
+    #     replaced -- so the default has to be the safe one.
+    import importlib
+    import engine.config as _cfg
+    saved_premium = os.environ.pop("PREMIUM_SEATS", None)
+    try:
+        importlib.reload(_cfg)
+        off = not _cfg.PREMIUM_SEATS
+        syn_free = "free" in _cfg.resolve_seat(_cfg.AGGREGATOR).model or                    _cfg.resolve_seat(_cfg.AGGREGATOR).provider != "openrouter" or                    "claude" not in _cfg.resolve_seat(_cfg.AGGREGATOR).model
+        check_off = off and syn_free
+
+        os.environ["PREMIUM_SEATS"] = "true"
+        importlib.reload(_cfg)
+        on = _cfg.PREMIUM_SEATS
+        syn = _cfg.resolve_seat(_cfg.AGGREGATOR)
+        jud = _cfg.resolve_seat(_cfg.DEBATE_JUDGE, avoid={syn.model})
+        upgraded = "claude" in syn.model and "claude" in jud.model
+        # The five proposers must NOT be upgraded: paying for opinion
+        # generation is the expensive way to buy the least.
+        props_free = all("claude" not in a.model for a in _cfg.available_proposers())
+
+        if check_off and on and upgraded and props_free:
+            print("[PASS] paid seats off by default, upgrade only Synthesis and Judge")
+        else:
+            ok = False
+            print(f"[FAIL] premium seats: default_off={check_off} on={on} "
+                  f"upgraded={upgraded} proposers_stay_free={props_free}")
+    finally:
+        os.environ.pop("PREMIUM_SEATS", None)
+        if saved_premium is not None:
+            os.environ["PREMIUM_SEATS"] = saved_premium
+        importlib.reload(_cfg)
+
+    # 21. Memory preamble must survive being passed through a real run.
     from engine import prompts as P
     pre = P.memory_preamble([{"user_prompt": "earlier q", "final_answer": "earlier a"}])
     if "earlier q" in pre and "earlier a" in pre and "Current question" in pre:

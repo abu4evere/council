@@ -137,6 +137,31 @@ DEBATE_JUDGE = Agent(key="judge", label="Judge",
                      color="#d4a02c")
 
 
+# --- paid seats, off by default ---------------------------------------------
+# Synthesis and the Judge are the two seats that read everything and must
+# resolve contradictions rather than generate an opinion. That is the work the
+# free models do worst, and it is only two calls per run, so it is the cheapest
+# place to spend money and the most valuable.
+#
+# Measured from 18 real runs: those two seats see roughly 6000 tokens in and
+# 3500 out per Full run. At claude-sonnet-5's rates that is about $0.047 a run,
+# so $5 buys roughly a hundred Full runs. The five proposers stay free --
+# generating a distinctive opinion is something the free models already do well.
+#
+# OFF BY DEFAULT, and deliberately so: switching it on without credit on the
+# account makes every Synthesis fail with a 402, which is worse than the free
+# model it replaced. Top up first, then set PREMIUM_SEATS=true.
+PREMIUM_SEATS = os.environ.get("PREMIUM_SEATS", "").strip().lower() in ("1", "true", "yes")
+PREMIUM_MODEL = os.environ.get("PREMIUM_MODEL", "anthropic/claude-sonnet-5").strip()
+
+
+def _premium(seat: Agent) -> Agent:
+    if not PREMIUM_SEATS:
+        return seat
+    return Agent(key=seat.key, label=seat.label, provider="openrouter",
+                 model=PREMIUM_MODEL, framing=seat.framing, color=seat.color)
+
+
 def resolve_seat(agent: Agent, avoid: set[str] | None = None,
                  avoid_providers: set[str] | None = None) -> Agent | None:
     """Return the seat, or an equivalent on a provider that IS configured.
@@ -155,6 +180,12 @@ def resolve_seat(agent: Agent, avoid: set[str] | None = None,
     """
     avoid = avoid or set()
     avoid_providers = avoid_providers or set()
+
+    # Upgrade the two decision seats when paid mode is on and a key exists.
+    if agent.key in ("synthesis", "judge") and PREMIUM_SEATS:
+        upgraded = _premium(agent)
+        if upgraded.available():
+            return upgraded
 
     if (agent.available() and agent.model not in avoid
             and agent.provider not in avoid_providers):

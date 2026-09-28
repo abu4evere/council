@@ -158,6 +158,32 @@ that authenticates but lacks permission is the worst kind of failure -- a
 GitHub token missing the `Models` scope returns a plain-text `200 OK` that
 parses as an empty answer, which looks exactly like success.
 
+## Optionally paying for the two seats that need it
+
+Everything runs free by default. If you want better output, the cheapest place
+to spend money is also the most valuable: **Synthesis and the Judge**. Those two
+read everything and have to resolve contradictions, which is what free models do
+worst. The five proposers only need to produce a distinctive opinion, which they
+already do well, so paying for them buys the least.
+
+Measured over 18 real runs, those two seats see about 6,000 tokens in and 3,500
+out per Full run:
+
+| Model | Per Full run | Runs per $5 |
+|---|---|---|
+| `claude-sonnet-5` | $0.047 | ~106 |
+| `claude-haiku-4.5` | $0.024 | ~212 |
+| `gpt-5-mini` | $0.0085 | ~588 |
+
+```
+PREMIUM_SEATS=true
+PREMIUM_MODEL=anthropic/claude-sonnet-5
+```
+
+**Top up before switching it on.** With a zero balance every Synthesis fails
+with a 402, which is worse than the free model it replaced -- so the default is
+off and a test asserts it stays off.
+
 ## Decision memos
 
 Every finished run exports as a markdown memo: the question, what is still
