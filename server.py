@@ -197,6 +197,33 @@ async def execute_turn(turn_id: str, conversation_id: str, mode: str, question: 
 # upgrading does not lock a self-hoster out of their own instance.
 SHARED_SESSIONS: set[str] = set()
 
+# Guest runs, keyed by a cookie. A guest is not an account: no history, no
+# vault, no keys -- just one run so the visitor can see what the thing does
+# before being asked to commit to it.
+GUEST_RUNS_ALLOWED = int(os.environ.get("GUEST_RUNS", "1"))
+_GUEST_USED: dict[str, int] = {}
+
+
+def guest_id(request: Request, response: Response | None = None) -> str:
+    """A stable id for an unauthenticated visitor.
+
+    Cookie-based, so it is trivially defeated by clearing cookies -- which is
+    fine. This is a nudge toward signing up, not a security control, and the
+    free tier it guards costs nothing. Treating it as a real limit would mean
+    fingerprinting people, which is a worse trade than a few extra free runs.
+    """
+    gid = request.cookies.get("council_guest")
+    if not gid:
+        gid = secrets.token_urlsafe(16)
+        if response is not None:
+            response.set_cookie("council_guest", gid, httponly=True,
+                                samesite="lax", max_age=60 * 60 * 24 * 30)
+    return gid
+
+
+def guest_runs_left(gid: str) -> int:
+    return max(0, GUEST_RUNS_ALLOWED - _GUEST_USED.get(gid, 0))
+
 # Failed login attempts per client address. Password strength is only half the
 # story -- an unthrottled login form lets a script try millions of guesses.
 _LOGIN_FAILURES: dict[str, list[float]] = {}
@@ -238,6 +265,11 @@ def current_user(token: str | None) -> dict | None:
     if not token:
         return None
     return db.session_user(token)
+
+
+def optional_user(token: str | None) -> dict | None:
+    """The signed-in user, or None -- without refusing the request."""
+    return current_user(token)
 
 
 def require_user(token: str | None) -> dict | None:
@@ -347,7 +379,8 @@ async def logout(response: Response, council_session: str | None = Cookie(defaul
 
 
 @app.get("/api/auth-status")
-async def auth_status(council_session: str | None = Cookie(default=None)):
+async def auth_status(request: Request, response: Response,
+                      council_session: str | None = Cookie(default=None)):
     user = current_user(council_session)
     has_accounts = await asyncio.to_thread(db.user_count) > 0
     return {
@@ -356,6 +389,7 @@ async def auth_status(council_session: str | None = Cookie(default=None)):
         "authenticated": bool(user) or (council_session in SHARED_SESSIONS),
         "username": user["username"] if user else None,
         "can_signup": True,
+        "guest_runs_left": (0 if user else guest_runs_left(guest_id(request, response))),
     }
 
 
@@ -370,8 +404,16 @@ async def api_list_conversations(council_session: str | None = Cookie(default=No
 
 
 @app.post("/api/conversations")
-async def api_create_conversation(council_session: str | None = Cookie(default=None)):
-    user = require_user(council_session)
+async def api_create_conversation(request: Request, response: Response,
+                                  council_session: str | None = Cookie(default=None)):
+    user = optional_user(council_session)
+    if user is None and council_session not in SHARED_SESSIONS:
+        # Guest: allowed a conversation only while they have a run left.
+        gid = guest_id(request, response)
+        if guest_runs_left(gid) <= 0:
+            raise HTTPException(401, "not authenticated")
+        cid = await asyncio.to_thread(db.create_conversation, "Trial", None)
+        return {"id": cid, "guest": True}
     cid = await asyncio.to_thread(db.create_conversation, "New conversation", owner_id(user))
     return {"id": cid}
 
@@ -411,10 +453,27 @@ async def api_rename_conversation(
 
 @app.post("/api/conversations/{cid}/turns")
 async def api_create_turn(
-    cid: str, request: Request, council_session: str | None = Cookie(default=None)
+    cid: str, request: Request, response: Response,
+    council_session: str | None = Cookie(default=None)
 ):
-    user = require_user(council_session)
-    _assert_owns(await asyncio.to_thread(db.conversation_owner, cid), user)
+    user = optional_user(council_session)
+    is_guest = user is None and council_session not in SHARED_SESSIONS
+    gid = ""
+    if is_guest:
+        gid = guest_id(request, response)
+        if guest_runs_left(gid) <= 0:
+            raise HTTPException(
+                401,
+                "That was your free run. Create an account to keep going -- it "
+                "takes one line and your history is saved.")
+        owner = await asyncio.to_thread(db.conversation_owner, cid)
+        if owner is not None:
+            raise HTTPException(404, "no such conversation")
+    else:
+        if db.user_count() > 0 and user is None and council_session not in SHARED_SESSIONS:
+            raise HTTPException(401, "not authenticated")
+        _assert_owns(await asyncio.to_thread(db.conversation_owner, cid), user)
+
     body = await request.json()
     question = str(body.get("prompt", "")).strip()
     mode = str(body.get("mode", "moa"))
@@ -464,6 +523,9 @@ async def api_create_turn(
         else:
             await asyncio.to_thread(db.count_free_run, uid, day)
 
+    if is_guest and gid:
+        _GUEST_USED[gid] = _GUEST_USED.get(gid, 0) + 1
+
     bus = RunBus(turn_id)
     BUSES[turn_id] = bus
     bus.task = asyncio.create_task(
@@ -493,8 +555,11 @@ async def api_cancel_turn(turn_id: str, council_session: str | None = Cookie(def
 async def api_stream(
     turn_id: str, after: int = 0, council_session: str | None = Cookie(default=None)
 ):
-    user = require_user(council_session)
-    _assert_owns(await asyncio.to_thread(db.turn_owner, turn_id), user)
+    user = optional_user(council_session)
+    owner = await asyncio.to_thread(db.turn_owner, turn_id)
+    if owner is not None or user is not None:
+        user = require_user(council_session)
+        _assert_owns(owner, user)
     turn = await asyncio.to_thread(db.get_turn, turn_id)
     if not turn:
         raise HTTPException(404, "no such turn")
@@ -560,8 +625,11 @@ async def api_turn_events(
     turn_id: str, after: int = 0, council_session: str | None = Cookie(default=None)
 ):
     """Non-streaming fallback, and how the UI rebuilds a past turn's detail view."""
-    user = require_user(council_session)
-    _assert_owns(await asyncio.to_thread(db.turn_owner, turn_id), user)
+    user = optional_user(council_session)
+    owner = await asyncio.to_thread(db.turn_owner, turn_id)
+    if owner is not None or user is not None:
+        user = require_user(council_session)
+        _assert_owns(owner, user)
     return await asyncio.to_thread(db.events_since, turn_id, after)
 
 
@@ -828,8 +896,11 @@ async def api_turn_memo(turn_id: str, save: int = 0,
     searchable memory for later runs -- decide something in March, ask a
     related question in June, and the March reasoning comes back on its own.
     """
-    user = require_user(council_session)
-    _assert_owns(await asyncio.to_thread(db.turn_owner, turn_id), user)
+    user = optional_user(council_session)
+    owner = await asyncio.to_thread(db.turn_owner, turn_id)
+    if owner is not None or user is not None:
+        user = require_user(council_session)
+        _assert_owns(owner, user)
     turn = await asyncio.to_thread(db.get_turn, turn_id)
     if not turn:
         raise HTTPException(404, "no such turn")

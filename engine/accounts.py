@@ -74,20 +74,32 @@ def normalise_username(name: str) -> str:
 
 
 def username_problem(name: str) -> str | None:
-    """Return a human-readable reason the name is unusable, or None."""
+    """Return a human-readable reason the name is unusable, or None.
+
+    EMAIL ADDRESSES ARE ALLOWED, because people type one by reflex when a form
+    asks who they are. Rejecting "me@example.com" with a rule they were never
+    shown is the cheapest way to lose a visitor who was willing to sign up --
+    and the rule existed only because the original list of safe characters was
+    written without thinking about what people actually type.
+
+    Nothing downstream cares: the value is stored as text, compared exactly,
+    and never interpolated into a path, a query or a shell command.
+    """
     n = normalise_username(name)
     if len(n) < 3:
-        return "Username must be at least 3 characters."
-    if len(n) > 32:
-        return "Username must be 32 characters or fewer."
-    if not all(c.isalnum() or c in "-_." for c in n):
-        return "Use letters, numbers, dots, dashes and underscores only."
+        return "Make it at least 3 characters."
+    if len(n) > 64:
+        return "That is too long -- 64 characters at most."
+    if not all(c.isalnum() or c in "-_.@+" for c in n):
+        return "Letters, numbers and . - _ @ + only."
+    if n.count("@") > 1:
+        return "That does not look like a valid name or email."
     return None
 
 
 def password_problem(password: str) -> str | None:
     if not password or len(password) < 8:
-        return "Password must be at least 8 characters."
+        return "Passwords need at least 8 characters."
     if len(password) > 1024:
         # Long inputs are a cheap denial of service against a memory-hard KDF.
         return "Password is too long."

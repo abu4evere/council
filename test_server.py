@@ -13,6 +13,10 @@ for _v in ("GROQ_API_KEY", "GEMINI_API_KEY", "CEREBRAS_API_KEY",
            "GITHUB_TOKEN", "OPENROUTER_API_KEY"):
     os.environ[_v] = "test-key-not-used"
 os.environ["COUNCIL_PASSWORD"] = ""  # auth off for this test
+# This file exercises the run pipeline, not the guest gate -- the one-run trial
+# limit is covered by test_accounts.py. Without this it would stop after the
+# first run, which is the limit behaving correctly rather than a pipeline bug.
+os.environ["GUEST_RUNS"] = "50"
 
 # Use a throwaway database so the test never touches real history.
 import db  # noqa: E402

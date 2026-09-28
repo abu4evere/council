@@ -11,6 +11,7 @@ const el = (tag, cls, txt) => {
 const state = {
   conversationId: null,
   mode: "moa",
+  guest: false,
   challenge: "medium",
   running: false,
   stream: null,        // live EventSource
@@ -179,6 +180,17 @@ async function showWhoami() {
       $("#whoami").classList.remove("hidden");
     }
   } catch {}
+}
+
+function showGuestBanner(left) {
+  if ($("#guest-banner")) return;
+  const b = el("div", "guest-banner");
+  b.id = "guest-banner";
+  b.appendChild(el("span", "", `Trial · ${left} free run, no account needed`));
+  const btn = el("button", "guest-signup", "Create an account");
+  btn.addEventListener("click", () => { showLogin(); setAuthMode("signup"); });
+  b.appendChild(btn);
+  document.querySelector(".main").prepend(b);
 }
 
 /* ---------------- conversations ---------------- */
@@ -768,7 +780,17 @@ async function send() {
     turn.dataset.turnId = turn_id;
     attachStream(turn_id, turn);
   } catch (err) {
-    turn.appendChild(el("div", "failed", err.message));
+    if (state.guest && /free run|not authenticated/i.test(err.message)) {
+      // Their result is still on screen; that is the argument for signing up.
+      turn.appendChild(el("div", "guest-wall",
+        "That was your free run. Create an account to keep going — your "
+        + "history is saved and you get five runs a day."));
+      const cta = el("button", "guest-signup", "Create an account");
+      cta.addEventListener("click", () => { showLogin(); setAuthMode("signup"); });
+      turn.appendChild(cta);
+    } else {
+      turn.appendChild(el("div", "failed", err.message));
+    }
     state.running = false;
     $("#send").disabled = false;
   }
@@ -1006,6 +1028,17 @@ async function boot() {
 (async function init() {
   try {
     const st = await api("/api/auth-status");
+    if (st.required && !st.authenticated && (st.guest_runs_left || 0) > 0) {
+      // A stranger should see the product working before being asked to commit
+      // to an account. One run, then the wall -- with their result on screen.
+      state.guest = true;
+      showApp();
+      showGuestBanner(st.guest_runs_left);
+      const thread = $("#thread");
+      thread.innerHTML = "";
+      thread.appendChild(buildEmpty());
+      return;
+    }
     if (st.required && !st.authenticated) {
       showLogin();
       // The landing page's two buttons say which tab the visitor asked for.

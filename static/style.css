@@ -563,3 +563,24 @@ html, body {
 /* Memo / save buttons sit with Copy in the answer header; they are secondary
    actions and are styled as such. */
 .final-head .final-copy + .final-copy { margin-left: 6px; }
+
+/* ---------- trial mode ----------
+   A stranger should see the product work before being asked for an account.
+   The banner states the terms plainly rather than hiding the limit until it
+   is hit. */
+.guest-banner {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 16px; background: #1f1a17;
+  border-bottom: 1px solid #3a2a20; font-size: 12.5px; color: var(--text-dim);
+}
+.guest-signup {
+  margin-left: auto; background: var(--accent); color: #fff; border: none;
+  border-radius: 8px; font: inherit; font-size: 12px; font-weight: 600;
+  padding: 5px 13px; cursor: pointer;
+}
+.guest-signup:hover { background: #d4714f; }
+.guest-wall {
+  border: 1px solid var(--accent-dim); border-radius: var(--radius);
+  background: #1f1a17; padding: 15px 18px; font-size: 14px;
+  color: var(--text-dim); line-height: 1.6; margin-bottom: 10px;
+}
