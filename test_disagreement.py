@@ -30,6 +30,10 @@ Ship the small thing first.
    "sides": [{"seat": "Pragmatist", "says": "localStorage is enough for v1"},
              {"seat": "Systems Thinker", "says": "you will need sync within a month"}],
    "resolution": "Start without one; the migration is cheap if it stays a thin layer."}
+],
+ "decisions": [
+  {"question": "Do you need this to work offline?",
+   "why": "it decides whether a backend is required at all"}
 ]}
 ```
 
@@ -38,7 +42,7 @@ That is all.'''
 
 def main() -> int:
     # --- the happy path ---
-    answer, points = extract(GOOD)
+    answer, points, _ = extract(GOOD)
     check("parses a well-formed block", len(points) == 1, str(points))
     check("block is removed from the answer", "council-disagreements" not in answer)
     check("prose before AND after the block survives",
@@ -72,28 +76,49 @@ def main() -> int:
          '```json council-disagreements\n{"disagreements":[{"sides":[]}]}\n```', 0),
     ]
     for name, text, want in mangled:
-        ans, pts = extract(text)
+        ans, pts, _ = extract(text)
         ok = len(pts) == want and "```json" not in ans
         check(f"handles: {name}", ok, f"got {len(pts)} points, want {want}")
 
     # --- the rule that matters most ---
     broken = '```json council-disagreements\n{{{ totally broken\n```\nThe real answer text.'
-    ans, pts = extract(broken)
+    ans, pts, _ = extract(broken)
     check("A BROKEN BLOCK NEVER COSTS THE ANSWER", "The real answer text." in ans, ans[:80])
     check("broken fence is still stripped from view", "```json" not in ans)
 
-    check("empty input is safe", extract("") == ("", []))
+    check("empty input is safe", extract("") == ("", [], []))
     check("None-ish input is safe", extract(None)[1] == [])
 
     # --- bounds ---
     many = '{"disagreements":[' + ",".join(
         f'{{"point":"P{i}"}}' for i in range(20)) + ']}'
-    _, pts = extract(f"```json council-disagreements\n{many}\n```")
+    _, pts, _ = extract(f"```json council-disagreements\n{many}\n```")
     check("caps runaway lists", len(pts) <= 6, f"{len(pts)} points")
 
     long_point = '{"disagreements":[{"point":"' + "x" * 2000 + '"}]}'
-    _, pts = extract(f"```json council-disagreements\n{long_point}\n```")
+    _, pts, _ = extract(f"```json council-disagreements\n{long_point}\n```")
     check("truncates absurdly long text", len(pts[0].point) <= 400, str(len(pts[0].point)))
+
+    # --- decisions: the payoff section ---
+    both = ('```json council-disagreements\n'
+            '{"disagreements":[{"point":"A","sides":[]}],'
+            ' "decisions":[{"question":"Do you need offline support?",'
+            '"why":"it decides whether you need a backend"},'
+            '{"question":"Who is this for?"}]}\n```')
+    ans, pts, decs = extract(both)
+    check("parses decisions alongside disagreements", len(decs) == 2, str(decs))
+    check("decision question captured", decs[0].question.startswith("Do you need offline"))
+    check("decision rationale captured", "backend" in decs[0].why)
+    check("a decision without a rationale still parses", decs[1].question == "Who is this for?")
+
+    _, _, plain = extract('```json council-disagreements\n{"decisions":["Just a string question"]}\n```')
+    check("decisions given as plain strings", len(plain) == 1 and plain[0].question.startswith("Just a"))
+
+    _, _, alt = extract('```json council-disagreements\n{"open_questions":[{"question":"X"}]}\n```')
+    check("alternative key name for decisions", len(alt) == 1)
+
+    _, _, none = extract('```json council-disagreements\n{"disagreements":[]}\n```')
+    check("no decisions key is safe", none == [])
 
     passed, total = sum(results), len(results)
     print(f"\n{passed}/{total} checks passed")

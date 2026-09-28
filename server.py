@@ -127,10 +127,16 @@ async def execute_turn(turn_id: str, conversation_id: str, mode: str, question: 
         # Lift the structured disagreement out of the answer and announce it
         # separately. The place the models disagreed is the most valuable thing
         # a run produces, and until now it was buried in prose.
-        answer, points = disagreement.extract(answer)
+        answer, points, decisions = disagreement.extract(answer)
         if points:
             await bus.emit("disagreement", None,
                            {"points": [p.as_dict() for p in points]})
+        if decisions:
+            # Emitted separately from the answer because it is the payoff, not
+            # a footnote: the reason this tool exists is that people do not
+            # always know which question to ask.
+            await bus.emit("decisions", None,
+                           {"decisions": [d.as_dict() for d in decisions]})
         await asyncio.to_thread(db.finish_turn, turn_id, answer, None)
         await bus.emit("done", None, {"final_answer": answer})
     except asyncio.CancelledError:

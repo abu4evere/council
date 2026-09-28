@@ -40,6 +40,16 @@ class Side:
 
 
 @dataclass
+class Decision:
+    """A question the user still has to answer, and what hangs on it."""
+    question: str
+    why: str = ""
+
+    def as_dict(self) -> dict:
+        return {"question": self.question, "why": self.why}
+
+
+@dataclass
 class Point:
     point: str
     sides: list[Side] = field(default_factory=list)
@@ -53,29 +63,52 @@ class Point:
         }
 
 
-def extract(answer: str) -> tuple[str, list[Point]]:
-    """Return (answer without the block, parsed points).
+def extract(answer: str) -> tuple[str, list[Point], list[Decision]]:
+    """Return (answer without the block, disagreements, decisions).
 
     The answer always comes back usable, whatever the model emitted.
     """
     if not answer:
-        return answer, []
+        return answer, [], []
 
     match = BLOCK.search(answer) or LOOSE.search(answer)
     if not match:
-        return answer, []
+        return answer, [], []
 
+    # The fence is noise to a reader whether or not its contents parse, so it
+    # goes either way.
     cleaned = (answer[:match.start()] + answer[match.end():]).strip()
-    points = _parse(match.group(1))
-    if not points:
-        # Nothing usable inside, but the fence itself is noise to a reader, so
-        # it still goes.
-        return cleaned, []
-    return cleaned, points
+    data = _load(match.group(1))
+    return cleaned, _parse_points(data), _parse_decisions(data)
 
 
-def _parse(raw: str) -> list[Point]:
-    data = _load(raw)
+def _parse_decisions(data) -> list[Decision]:
+    """The questions the user still has to answer.
+
+    Deliberately separate from the disagreements: a disagreement is about what
+    the models thought, a decision is about what the READER must now do. Those
+    are different kinds of thing and conflating them buries the second.
+    """
+    if not isinstance(data, dict):
+        return []
+    items = data.get("decisions") or data.get("open_questions") or []
+    if not isinstance(items, list):
+        return []
+    out = []
+    for item in items[:6]:
+        if isinstance(item, str) and item.strip():
+            out.append(Decision(question=item.strip()[:300]))
+        elif isinstance(item, dict):
+            q = _text(item, "question", "decision", "q", "ask")
+            if q:
+                out.append(Decision(
+                    question=q,
+                    why=_text(item, "why", "depends", "impact", "because", "matters"),
+                ))
+    return out
+
+
+def _parse_points(data) -> list[Point]:
     if data is None:
         return []
 

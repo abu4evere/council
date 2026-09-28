@@ -541,3 +541,21 @@ html, body {
 .chal:hover { color: var(--text-dim); }
 .chal.active { color: var(--text); background: #32312e; border-color: var(--border); }
 @media (max-width: 560px) { .challenge { margin-left: 0; } }
+
+/* ---------- decide these ----------
+   After the answer, not before: you read the conclusion, then you are told
+   what you have not decided yet. Numbered because they are ordered by how much
+   depends on them. */
+.decisions {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: #1a1815; padding: 4px 18px 16px; margin-top: 14px;
+}
+.decisions-head {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--warn); font-weight: 600; padding: 13px 0 8px;
+}
+.decisions-list { margin: 0; padding-left: 20px; }
+.decisions-list li { margin: 0 0 10px; padding-left: 3px; }
+.decisions-list li::marker { color: var(--warn); font-size: 12px; }
+.decision-q { display: block; font-size: 14px; color: var(--text); }
+.decision-why { display: block; font-size: 12.5px; color: var(--text-faint); margin-top: 2px; line-height: 1.5; }

@@ -363,11 +363,14 @@ async function renderPastTurn(t) {
     const evs = await api(`/api/turns/${t.id}/events?after=0`);
     const d = evs.filter((e) => e.type === "disagreement").pop();
     if (d && d.points && d.points.length) turn.appendChild(disagreementBlock(d.points));
+    const dec = evs.filter((e) => e.type === "decisions").pop();
+    if (dec && dec.decisions && dec.decisions.length) turn._decisions = dec.decisions;
   } catch {}
 
   if (t.status === "done" && t.final_answer) {
     collapseRun(turn);
     turn.appendChild(finalBlock(t.final_answer));
+    if (turn._decisions) turn.appendChild(decisionsBlock(turn._decisions));
   } else if (t.status === "error") {
     turn.appendChild(el("div", "failed", t.error || "This run failed."));
   } else if (t.status === "running") {
@@ -380,6 +383,26 @@ async function renderPastTurn(t) {
    Rendered ABOVE the merged answer, because it is the part a reader cannot get
    from a single model and therefore the whole reason to run five. Each point
    shows the opposing positions side by side, then how it was resolved. */
+/* The decisions the reader still has to make.
+   Placed AFTER the answer on purpose: you read the conclusion, then you are
+   told what you have not decided yet. This is the reason the tool exists --
+   the hard part of planning is rarely the answer, it is not knowing which
+   question to ask -- so it gets its own panel rather than a heading buried in
+   markdown. */
+function decisionsBlock(decisions) {
+  const box = el("div", "decisions");
+  box.appendChild(el("div", "decisions-head", "Decide these"));
+  const list = el("ol", "decisions-list");
+  for (const d of decisions) {
+    const li = el("li", "");
+    li.appendChild(el("span", "decision-q", d.question));
+    if (d.why) li.appendChild(el("span", "decision-why", d.why));
+    list.appendChild(li);
+  }
+  box.appendChild(list);
+  return box;
+}
+
 function disagreementBlock(points) {
   const box = el("div", "disagree");
   const head = el("div", "disagree-head");
@@ -661,9 +684,14 @@ function handleEvent(ev, agentsBox, turnEl) {
       scrollDown();
       break;
 
+    case "decisions":
+      turnEl._decisions = ev.decisions;
+      break;
+
     case "done":
       collapseRun(turnEl);
       turnEl.appendChild(finalBlock(ev.final_answer));
+      if (turnEl._decisions) turnEl.appendChild(decisionsBlock(turnEl._decisions));
       setStage(null);
       scrollDown();
       loadConversations();
