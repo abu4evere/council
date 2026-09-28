@@ -25,7 +25,7 @@ load_dotenv()
 
 import db  # noqa: E402
 from engine import (accounts, config, disagreement, keyring, memo, prompts,
-                    providers, vault)  # noqa: E402
+                    providers, quota, vault)  # noqa: E402
 from engine.llm import check_configured_models, list_models  # noqa: E402
 from engine.orchestrator import Orchestrator  # noqa: E402
 
@@ -85,6 +85,22 @@ class RunBus:
 BUSES: dict[str, RunBus] = {}
 
 
+def run_is_on_our_money(user_keys: dict) -> bool:
+    """True when this run spends the operator's keys rather than the user's.
+
+    A visitor who supplied their own keys is not costing anything, so no quota
+    applies to them. Everyone else is drawing on a shared pot.
+    """
+    needed = {a.provider for a in config.available_proposers()}
+    needed |= {config.AGGREGATOR.provider, config.DEBATE_ARCHITECT.provider,
+               config.DEBATE_CRITIC.provider, config.DEBATE_JUDGE.provider}
+    for name in needed:
+        prov = providers.PROVIDERS.get(name)
+        if prov and prov.env_var and not user_keys.get(prov.env_var):
+            return True
+    return False
+
+
 def load_user_keys(user_id: str | None) -> dict:
     """Decrypted {env_var: api_key} for this user. Empty for a local install."""
     if not user_id:
@@ -100,7 +116,8 @@ def load_user_keys(user_id: str | None) -> dict:
 async def execute_turn(turn_id: str, conversation_id: str, mode: str, question: str,
                        user_keys: dict | None = None,
                        turn_owner_id: str | None = None,
-                       challenge: str = "medium") -> None:
+                       challenge: str = "medium",
+                       reserved_cents: int = 0) -> None:
     bus = BUSES[turn_id]
     try:
         prior = await asyncio.to_thread(
@@ -152,6 +169,20 @@ async def execute_turn(turn_id: str, conversation_id: str, mode: str, question: 
         await asyncio.to_thread(db.finish_turn, turn_id, None, msg)
         await bus.emit("failed", None, {"error": msg})
     finally:
+        # Settle in `finally` so a crashed or cancelled run still releases its
+        # reservation. A held reservation that is never freed silently shrinks
+        # the balance forever.
+        if reserved_cents and turn_owner_id:
+            produced = 0
+            try:
+                for ev in await asyncio.to_thread(db.events_since, turn_id, 0):
+                    if ev.get("type") == "agent_done":
+                        produced += len(ev.get("text") or "")
+            except Exception:
+                produced = 0
+            actual = quota.estimate_cents(mode, produced) if produced else 0
+            await asyncio.to_thread(db.settle, turn_owner_id, reserved_cents, actual)
+
         bus.finished = True
         # Give reconnecting clients a window to drain the tail of the stream.
         await asyncio.sleep(90)
@@ -413,11 +444,31 @@ async def api_create_turn(
 
     user_keys = await asyncio.to_thread(load_user_keys, owner_id(user))
 
+    # Limits apply only when the run spends the operator's keys. Reserve BEFORE
+    # the run, not after: checking a balance once the money is gone is an
+    # accounting entry, not a limit.
+    reserved = 0
+    uid = owner_id(user)
+    if uid and run_is_on_our_money(user_keys):
+        day = quota.today()
+        usage = await asyncio.to_thread(db.get_usage, uid, day)
+        uses_paid = config.PREMIUM_SEATS
+        try:
+            need = quota.check(usage, mode, uses_paid)
+        except quota.Denied as exc:
+            raise HTTPException(429, str(exc))
+        if need:
+            if not await asyncio.to_thread(db.reserve, uid, day, need):
+                raise HTTPException(429, "Your credit ran out while this run was starting.")
+            reserved = need
+        else:
+            await asyncio.to_thread(db.count_free_run, uid, day)
+
     bus = RunBus(turn_id)
     BUSES[turn_id] = bus
     bus.task = asyncio.create_task(
         execute_turn(turn_id, cid, mode, question, user_keys, owner_id(user),
-                     challenge))
+                     challenge, reserved))
     return {"turn_id": turn_id}
 
 
@@ -661,6 +712,25 @@ def _reindex_vault(user_id: str | None) -> dict:
         return {"configured": True, "path": str(root), "sections": n}
     finally:
         conn.close()
+
+
+@app.get("/api/usage")
+async def api_usage(council_session: str | None = Cookie(default=None)):
+    """What this account has left today."""
+    user = require_user(council_session)
+    if not user:
+        return {"tracked": False}
+    u = await asyncio.to_thread(db.get_usage, user["id"], quota.today())
+    own_keys = bool(await asyncio.to_thread(db.get_user_keys, user["id"]))
+    return {
+        "tracked": True,
+        "own_keys": own_keys,
+        "free_runs_left": max(0, quota.FREE_RUNS_PER_DAY - u["runs_today"]),
+        "free_runs_per_day": quota.FREE_RUNS_PER_DAY,
+        "credit_cents": u["credit_cents"] - u["reserved_cents"],
+        "spent_cents": u["spent_cents"],
+        "paid_seats_on": config.PREMIUM_SEATS,
+    }
 
 
 @app.get("/api/keys")

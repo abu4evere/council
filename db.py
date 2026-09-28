@@ -34,6 +34,16 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
+CREATE TABLE IF NOT EXISTS user_usage (
+    user_id        TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    day            TEXT NOT NULL,
+    runs_today     INTEGER NOT NULL DEFAULT 0,
+    credit_cents   INTEGER NOT NULL DEFAULT 0,
+    reserved_cents INTEGER NOT NULL DEFAULT 0,
+    spent_cents    INTEGER NOT NULL DEFAULT 0,
+    updated_at     REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS user_keys (
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     env_var    TEXT NOT NULL,
@@ -169,6 +179,96 @@ def user_count() -> int:
     conn = connect()
     try:
         return conn.execute("SELECT COUNT(*) c FROM users").fetchone()["c"]
+    finally:
+        conn.close()
+
+
+
+# --- usage and credit ------------------------------------------------------
+
+def get_usage(user_id: str, day: str) -> dict:
+    """This user's counters, rolling the daily count over when the day changes."""
+    conn = connect()
+    try:
+        row = conn.execute("SELECT * FROM user_usage WHERE user_id = ?", (user_id,)).fetchone()
+        if row is None:
+            conn.execute(
+                """INSERT INTO user_usage (user_id, day, runs_today, credit_cents,
+                                           reserved_cents, spent_cents, updated_at)
+                   VALUES (?,?,0,0,0,0,?)""", (user_id, day, _now()))
+            conn.commit()
+            return {"user_id": user_id, "day": day, "runs_today": 0,
+                    "credit_cents": 0, "reserved_cents": 0, "spent_cents": 0}
+        d = dict(row)
+        if d["day"] != day:
+            # New day: the free allowance resets. Credit does NOT -- it was
+            # paid for and does not expire.
+            conn.execute(
+                "UPDATE user_usage SET day = ?, runs_today = 0, updated_at = ? WHERE user_id = ?",
+                (day, _now(), user_id))
+            conn.commit()
+            d["day"], d["runs_today"] = day, 0
+        return d
+    finally:
+        conn.close()
+
+
+def reserve(user_id: str, day: str, cents: int) -> bool:
+    """Hold credit before a run. False when it no longer covers the amount.
+
+    The check and the write happen in ONE statement, so two runs started at the
+    same moment cannot both pass a balance check that only one of them can
+    afford.
+    """
+    conn = connect()
+    try:
+        cur = conn.execute(
+            """UPDATE user_usage
+               SET reserved_cents = reserved_cents + ?, runs_today = runs_today + 1,
+                   updated_at = ?
+               WHERE user_id = ? AND (credit_cents - reserved_cents) >= ?""",
+            (cents, _now(), user_id, cents))
+        conn.commit()
+        return cur.rowcount == 1
+    finally:
+        conn.close()
+
+
+def count_free_run(user_id: str, day: str) -> None:
+    conn = connect()
+    try:
+        conn.execute(
+            "UPDATE user_usage SET runs_today = runs_today + 1, updated_at = ? WHERE user_id = ?",
+            (_now(), user_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def settle(user_id: str, reserved_cents: int, actual_cents: int) -> None:
+    """Release the reservation and charge what the run really cost."""
+    conn = connect()
+    try:
+        conn.execute(
+            """UPDATE user_usage
+               SET reserved_cents = MAX(0, reserved_cents - ?),
+                   credit_cents   = MAX(0, credit_cents - ?),
+                   spent_cents    = spent_cents + ?,
+                   updated_at     = ?
+               WHERE user_id = ?""",
+            (reserved_cents, actual_cents, actual_cents, _now(), user_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def add_credit(user_id: str, cents: int) -> None:
+    conn = connect()
+    try:
+        conn.execute(
+            "UPDATE user_usage SET credit_cents = credit_cents + ?, updated_at = ? WHERE user_id = ?",
+            (cents, _now(), user_id))
+        conn.commit()
     finally:
         conn.close()
 
