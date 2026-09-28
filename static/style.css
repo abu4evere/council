@@ -470,3 +470,41 @@ html, body {
 .vault-form { display: flex; gap: 6px; }
 .vault-status { font-size: 11.5px; color: var(--text-faint); margin-top: 7px; }
 .vault-status.ok { color: var(--ok); }
+
+/* ---------- where the models disagreed ----------
+   Sits above the merged answer. This is the one thing a reader cannot get from
+   a single model, so it gets the accent treatment and the answer does not. */
+.disagree {
+  border: 1px solid var(--border); border-left: 2px solid var(--accent);
+  border-radius: var(--radius); background: #191917;
+  padding: 4px 18px 16px; margin-bottom: 14px;
+}
+.disagree-head {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--accent); font-weight: 600; padding: 13px 0 4px;
+}
+.disagree-item { padding: 11px 0; border-top: 1px solid var(--border-soft); }
+.disagree-item:first-of-type { border-top: none; }
+.disagree-point { font-size: 14px; font-weight: 600; margin-bottom: 9px; }
+
+/* Two positions side by side: the contrast is the information. */
+.disagree-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.disagree-side {
+  background: var(--bg-input); border: 1px solid var(--border-soft);
+  border-radius: 9px; padding: 9px 11px;
+}
+.disagree-seat {
+  display: block; font-size: 11px; font-weight: 600;
+  color: var(--text-dim); margin-bottom: 3px;
+}
+.disagree-says { font-size: 13px; color: var(--text-dim); line-height: 1.55; }
+
+.disagree-res { margin-top: 9px; font-size: 13px; color: var(--text-dim); line-height: 1.55; }
+.disagree-res-label {
+  display: inline-block; font-size: 10px; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--ok); font-weight: 650; margin-right: 7px;
+}
+
+@media (max-width: 640px) {
+  .disagree-sides { grid-template-columns: 1fr; }
+}

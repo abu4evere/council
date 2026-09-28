@@ -358,6 +358,12 @@ async function renderPastTurn(t) {
     }
   } catch {}
 
+  try {
+    const evs = await api(`/api/turns/${t.id}/events?after=0`);
+    const d = evs.filter((e) => e.type === "disagreement").pop();
+    if (d && d.points && d.points.length) turn.appendChild(disagreementBlock(d.points));
+  } catch {}
+
   if (t.status === "done" && t.final_answer) {
     turn.appendChild(finalBlock(t.final_answer));
   } else if (t.status === "error") {
@@ -366,6 +372,43 @@ async function renderPastTurn(t) {
     // A run still going from another device or a previous page load - attach to it.
     attachStream(t.id, turn);
   }
+}
+
+/* Where the models disagreed.
+   Rendered ABOVE the merged answer, because it is the part a reader cannot get
+   from a single model and therefore the whole reason to run five. Each point
+   shows the opposing positions side by side, then how it was resolved. */
+function disagreementBlock(points) {
+  const box = el("div", "disagree");
+  const head = el("div", "disagree-head");
+  head.appendChild(el("span", "", points.length === 1
+    ? "They disagreed on one thing"
+    : `They disagreed on ${points.length} things`));
+  box.appendChild(head);
+
+  for (const p of points) {
+    const item = el("div", "disagree-item");
+    item.appendChild(el("div", "disagree-point", p.point));
+
+    if (p.sides && p.sides.length) {
+      const sides = el("div", "disagree-sides");
+      for (const s of p.sides) {
+        const side = el("div", "disagree-side");
+        if (s.seat) side.appendChild(el("span", "disagree-seat", s.seat));
+        side.appendChild(el("span", "disagree-says", s.says));
+        sides.appendChild(side);
+      }
+      item.appendChild(sides);
+    }
+    if (p.resolution) {
+      const res = el("div", "disagree-res");
+      res.appendChild(el("span", "disagree-res-label", "Resolved"));
+      res.appendChild(el("span", "", p.resolution));
+      item.appendChild(res);
+    }
+    box.appendChild(item);
+  }
+  return box;
 }
 
 function finalBlock(text) {
@@ -567,6 +610,11 @@ function handleEvent(ev, agentsBox, turnEl) {
       p.body.classList.remove("streaming");
       break;
     }
+
+    case "disagreement":
+      turnEl.appendChild(disagreementBlock(ev.points));
+      scrollDown();
+      break;
 
     case "done":
       turnEl.appendChild(finalBlock(ev.final_answer));

@@ -24,7 +24,8 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv()
 
 import db  # noqa: E402
-from engine import accounts, config, keyring, prompts, providers, vault  # noqa: E402
+from engine import (accounts, config, disagreement, keyring, prompts,
+                    providers, vault)  # noqa: E402
 from engine.llm import check_configured_models, list_models  # noqa: E402
 from engine.orchestrator import Orchestrator  # noqa: E402
 
@@ -121,6 +122,14 @@ async def execute_turn(turn_id: str, conversation_id: str, mode: str, question: 
         # Every provider call inside this block sees this user's keys.
         with keyring.use_keys(user_keys or {}):
             answer = await orch.run(mode, question)
+
+        # Lift the structured disagreement out of the answer and announce it
+        # separately. The place the models disagreed is the most valuable thing
+        # a run produces, and until now it was buried in prose.
+        answer, points = disagreement.extract(answer)
+        if points:
+            await bus.emit("disagreement", None,
+                           {"points": [p.as_dict() for p in points]})
         await asyncio.to_thread(db.finish_turn, turn_id, answer, None)
         await bus.emit("done", None, {"final_answer": answer})
     except asyncio.CancelledError:

@@ -39,6 +39,23 @@ build a tracker, build a retention engine -- 99% of habit apps fail on churn"*.
 Four models given the same prompt would have agreed with each other and the
 merge would have been mush.
 
+## Where they disagreed
+
+The most valuable thing a run produces is not the answer -- it is the place the
+models reached *opposite* conclusions, because that is where the easy consensus
+answer would have been wrong. That used to be buried in prose inside the merged
+markdown, so the interface hid the product's best output.
+
+The synthesis now emits those points as structured data alongside its prose,
+and the UI shows them above the answer: each contested point, the opposing
+positions side by side, and how it was resolved.
+
+It costs no extra API call -- the synthesis already knows what it resolved, and
+a second extraction call would spend a request on a tier that allows 8000
+tokens a minute. A malformed block costs the panel and never the answer:
+`engine/disagreement.py` forgives trailing commas, missing labels, prose inside
+the fence and outright garbage, degrading to "no panel, full answer intact".
+
 ## The three modes
 
 | Mode | What runs | Time |

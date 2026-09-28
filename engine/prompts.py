@@ -39,7 +39,26 @@ Structure your answer as:
 3. "DISAGREEMENTS" -- where the advisors split, and how you resolved each one. Be brief.
 4. "OPEN QUESTIONS" -- decisions this user still has to make, and what each one depends on. \
 This section matters more than the rest; the user's stated reason for building this tool is \
-that they do not always know what to ask."""
+that they do not always know what to ask.
+
+Then, as the LAST thing in your reply, emit the disagreements again as machine-readable \
+data so the interface can show them. Use exactly this fence and put nothing after it:
+
+```json council-disagreements
+{"disagreements": [
+  {"point": "what they disagreed about, under 15 words",
+   "sides": [{"seat": "advisor name", "says": "their position in one sentence"}],
+   "resolution": "which side you took and why the other loses, in one sentence"}
+]}
+```
+
+Rules for that block:
+- Only GENUINE disagreements, where two advisors reached opposite conclusions. Do not \
+invent one to fill the block, and do not list a point merely because one advisor raised \
+something the others did not mention.
+- At most 3 entries, strongest first. If they genuinely agreed, emit {"disagreements": []}.
+- Valid JSON: no comments, no trailing commas.
+- This is IN ADDITION to the prose section above, not instead of it."""
 
 
 DEBATE_DRAFTER = """You are the Drafter. You produce a concrete plan and then defend or revise \
