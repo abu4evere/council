@@ -73,7 +73,7 @@ PROPOSERS: list[Agent] = [
     ),
     Agent(
         key="operator", label="Operator",
-        provider="gemini", model="gemma-4-31b-it",
+        provider="openrouter", model="cohere/north-mini-code:free",
         color="#a855c7",
         framing=(
             "Focus on what happens after it is built: cost, latency, maintenance, "
@@ -110,8 +110,13 @@ PROPOSERS: list[Agent] = [
 
 # Synthesis reads every proposer answer at once, so it carries one of the two
 # largest inputs in the system. It lives on Gemini for the headroom.
+# Moved off Gemini after it failed the Synthesis on every run in a day: Gemini
+# held three seats on an exhausted quota, so the merge -- the step that turns
+# five answers into one -- was the thing most often lost. A 550B model on a
+# fresh bucket is both stronger and available.
 AGGREGATOR = Agent(key="synthesis", label="Synthesis",
-                   provider="gemini", model="gemini-flash-latest", color="#5b8def")
+                   provider="openrouter",
+                   model="nvidia/nemotron-3-ultra-550b-a55b:free", color="#5b8def")
 
 DEBATE_ARCHITECT = Agent(key="drafter", label="Drafter",
                          provider="groq", model="openai/gpt-oss-120b", color="#c96442")

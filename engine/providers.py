@@ -169,10 +169,13 @@ PROVIDERS: dict[str, Provider] = {
         # Verified 2026-09-27 against OpenRouter's public /models endpoint.
         # Only families this roster lacks are listed; the gemma, qwen and
         # nemotron free slugs duplicate models already reachable elsewhere.
+        # Confirmed 2026-09-27 by a REAL completion, not by reading the
+        # catalogue -- thinkingmachines/inkling:free is listed and returns 403,
+        # which is exactly why listings are not evidence.
         alternates=("nvidia/nemotron-3-ultra-550b-a55b:free",
                     "cohere/north-mini-code:free",
-                    "thinkingmachines/inkling:free",
                     "liquid/lfm-2.5-2.6b:free"),
+        max_parallel=2,
         notes="Its ':free' slugs cost nothing. Verified 2026-09-27 from the PUBLIC "
               "/models listing: there are NO free Llama or Mistral models, despite "
               "that being widely claimed. What it does add are families nothing "
