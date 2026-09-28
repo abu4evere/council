@@ -19,6 +19,46 @@ UNKNOWNS, which is the output that actually helps, rather than style notes on a
 plan that was never going to survive anyway.
 """
 
+# One definition, shared by both seats that write a final answer.
+#
+# It lives in one place because it did not, and that cost two features. The
+# Synthesis writes the answer in Quick mode; the JUDGE writes it in Debate and
+# Full. Only the Synthesis was ever given this instruction, so the disagreement
+# and decision panels silently never appeared in the two slowest and most
+# expensive modes -- the ones where they matter most. Separately, the
+# "decisions" half had been added to the parser, the server and the UI while
+# the prompt asking for it failed to apply, so every run returned zero
+# decisions and nothing surfaced the gap.
+_BLOCK_SPEC = """
+
+Then, as the LAST thing in your reply, emit the same material as machine-readable \
+data so the interface can show it. Use exactly this fence and put nothing after it:
+
+```json council-disagreements
+{"disagreements": [
+  {"point": "what they disagreed about, under 15 words",
+   "sides": [{"seat": "name", "says": "their position in one sentence"}],
+   "resolution": "which side you took and why the other loses, in one sentence"}
+],
+ "decisions": [
+  {"question": "a decision the USER must make, phrased as a question",
+   "why": "what changes depending on the answer, in one sentence"}
+]}
+```
+
+Rules for that block:
+- DISAGREEMENTS: only genuine ones, where two parties reached opposite conclusions. \
+Do not invent one to fill the block. At most 3, strongest first. If they genuinely \
+agreed, emit an empty list.
+- DECISIONS: the questions the reader has not answered yet, ordered by how much \
+depends on them. At most 4. This is the most useful thing you produce, so a vague \
+decision wastes a slot: "How will you handle errors?" is useless, "Do you need this \
+to work offline, given that it decides whether you need a backend at all?" is not.
+- Valid JSON: no comments, no trailing commas.
+- This is IN ADDITION to the prose sections above, not instead of them.
+- Emit the block even when your prose already covered the same ground."""
+
+
 HOUSE_RULES = """HOW THIS COUNCIL SPEAKS -- these rules override any instinct to be agreeable.
 
 - Truth over validation. If the plan is weak, say so plainly in the first two
@@ -74,24 +114,7 @@ Structure your answer as:
 This section matters more than the rest; the user's stated reason for building this tool is \
 that they do not always know what to ask.
 
-Then, as the LAST thing in your reply, emit the disagreements again as machine-readable \
-data so the interface can show them. Use exactly this fence and put nothing after it:
-
-```json council-disagreements
-{"disagreements": [
-  {"point": "what they disagreed about, under 15 words",
-   "sides": [{"seat": "advisor name", "says": "their position in one sentence"}],
-   "resolution": "which side you took and why the other loses, in one sentence"}
-]}
-```
-
-Rules for that block:
-- Only GENUINE disagreements, where two advisors reached opposite conclusions. Do not \
-invent one to fill the block, and do not list a point merely because one advisor raised \
-something the others did not mention.
-- At most 3 entries, strongest first. If they genuinely agreed, emit {"disagreements": []}.
-- Valid JSON: no comments, no trailing commas.
-- This is IN ADDITION to the prose section above, not instead of it."""
+""" + _BLOCK_SPEC
 
 
 DEBATE_DRAFTER = """You are the Drafter. You produce a concrete plan and then defend or revise \
@@ -153,7 +176,7 @@ in one line. Do not paper over these.
 much hinges on them. For each, note what changes depending on the answer.
 
 Section 4 is the most important part of your output. The user built this tool because they do \
-not always know which questions to ask -- this is where you answer that."""
+not always know which questions to ask -- this is where you answer that.""" + _BLOCK_SPEC
 
 
 def proposer_system(label: str, framing: str, level: str = "medium") -> str:

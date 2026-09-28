@@ -432,7 +432,41 @@ async def main():
             os.environ["PREMIUM_SEATS"] = saved_premium
         importlib.reload(_cfg)
 
-    # 21. Memory preamble must survive being passed through a real run.
+    # 21. EVERY SEAT THAT WRITES A FINAL ANSWER must request the structured
+    #     block, and no seat that does not must request it. This check exists
+    #     because both halves were broken at once and nothing noticed: the
+    #     Judge writes the answer in Debate and Full mode and was never given
+    #     the instruction, so the panels silently never appeared in the two
+    #     slowest modes; and the "decisions" half had been wired through the
+    #     parser, the server and the UI while the prompt asking for it failed
+    #     to apply, so every run returned zero decisions. Both were invisible
+    #     because an absent panel looks identical to "they agreed".
+    from engine import prompts as _p
+    writes_answer = {"SYNTHESIS": _p.SYNTHESIS, "DEBATE_JUDGE": _p.DEBATE_JUDGE}
+    internal = {"PROPOSER": _p.PROPOSER, "DEBATE_DRAFTER": _p.DEBATE_DRAFTER,
+                "DEBATE_CRITIC": _p.DEBATE_CRITIC}
+
+    missing_fence = [n for n, t in writes_answer.items() if "council-disagreements" not in t]
+    missing_dec = [n for n, t in writes_answer.items() if '"decisions"' not in t]
+    leaked = [n for n, t in internal.items() if "council-disagreements" in t]
+
+    if not missing_fence and not missing_dec and not leaked:
+        print("[PASS] both answer-writing seats request disagreements AND decisions; "
+              "internal seats do not")
+    else:
+        ok = False
+        print(f"[FAIL] block spec: missing_fence={missing_fence} "
+              f"missing_decisions={missing_dec} leaked_to_internal={leaked}")
+
+    # And the spec must be defined once, so the two cannot drift apart again.
+    single = all(t.count("```json council-disagreements") == 1 for t in writes_answer.values())
+    if single:
+        print("[PASS] block spec defined once and shared, not duplicated per seat")
+    else:
+        ok = False
+        print("[FAIL] block spec appears more than once in a prompt")
+
+    # 22. Memory preamble must survive being passed through a real run.
     from engine import prompts as P
     pre = P.memory_preamble([{"user_prompt": "earlier q", "final_answer": "earlier a"}])
     if "earlier q" in pre and "earlier a" in pre and "Current question" in pre:
