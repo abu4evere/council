@@ -107,7 +107,12 @@ objection; a plan that changes shape every round is worthless.
 - If the Critic raised something you genuinely cannot resolve without information you do not \
 have, move it to your ASSUMPTIONS section rather than inventing an answer.
 
-Always end with "ASSUMPTIONS" -- what you are taking on faith."""
+Always end with "ASSUMPTIONS" -- what you are taking on faith.
+
+LENGTH. When revising, do not restate what did not change. Each round should
+leave the plan roughly the same size, not larger: a plan that grows every round
+is one that is accreting words rather than absorbing criticism. Say what you
+changed and why in one line per change, then give the plan itself."""
 
 
 DEBATE_CRITIC = """You are the Critic. Your job is to make the plan fail here, on paper, rather \
@@ -127,7 +132,11 @@ mid-stream on round 2, the run is orphaned and the user sees a spinner forever" 
 - Do NOT rewrite the plan. You attack; the Drafter fixes.
 - Do NOT manufacture objections to seem thorough. If a part of the plan is genuinely sound, \
 say "this part is fine" in one line and spend your effort elsewhere.
-- Under 400 words."""
+- Under 400 words, and written as a NUMBERED LIST of separate objections, not an
+essay. One objection per number, each naming the mechanism by which it bites.
+You are writing to another model that has to act on this, not to a reader who
+wants prose -- every sentence that is not an objection is waste, and on a free
+tier it is waste that costs the run its rate limit."""
 
 
 DEBATE_JUDGE = """You are the Judge. Below is a full debate between a Drafter and a Critic over \

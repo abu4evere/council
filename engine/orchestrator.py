@@ -21,7 +21,7 @@ from typing import Awaitable, Callable
 
 import httpx
 
-from . import config, prompts
+from . import config, language, prompts
 from .llm import ModelError, NotConfigured, stream_completion
 
 Emit = Callable[[str, "str | None", dict], Awaitable[None]]
@@ -32,6 +32,9 @@ class Orchestrator:
         self.emit = emit
         self.memory = memory
         self.challenge = challenge
+        # Set once per run from the question. Internal seats always work in
+        # English; only the seats the user reads switch.
+        self.language = "English"
         # One semaphore per provider. Four seats on four different providers run
         # fully parallel; several seats on ONE provider are throttled, because
         # free tiers rate-limit per minute and a 429 wastes the whole seat.
@@ -50,6 +53,24 @@ class Orchestrator:
         if provider not in self._gates:
             self._gates[provider] = asyncio.Semaphore(config.parallel_for(provider))
         return self._gates[provider]
+
+    def _internal_note(self) -> str:
+        """Told only to seats that talk to other seats, never to the reader.
+
+        BEST EFFORT, and knowingly so. Models mirror the language of the
+        question hard, and this instruction is sometimes ignored outright --
+        observed with an Uzbek question, where a proposer answered in Uzbek
+        despite being told twice not to. Nothing here breaks when that happens:
+        the seat still reasons well, the user-facing seats still reply in the
+        user's language, and the only loss is cross-vendor consistency in the
+        middle of the pipeline. Enforcing it would cost a translation pass per
+        seat, which is worse than the problem.
+        """
+        return language.INTERNAL_NOTE if self.language != "English" else ""
+
+    def _reply_note(self) -> str:
+        """Told only to the seats whose output the user actually reads."""
+        return language.reply_instruction(self.language)
 
     def _with_memory(self, prompt: str) -> str:
         return f"{self.memory}{prompt}" if self.memory else prompt
@@ -87,7 +108,10 @@ class Orchestrator:
         """Never raises -- one dead seat must not take down the other three."""
         await self._announce(agent, "proposer")
         try:
-            system = prompts.proposer_system(agent.label, agent.framing, self.challenge)
+            # The language note goes FIRST: the same text at the end was
+            # observed being ignored entirely.
+            system = (self._internal_note()
+                      + prompts.proposer_system(agent.label, agent.framing, self.challenge))
             text = await self._stream(
                 client, agent, system, self._with_memory(self.question),
                 config.MAX_TOKENS_PROPOSER, 0.85,
@@ -151,7 +175,9 @@ class Orchestrator:
 
         user = f"ORIGINAL QUESTION:\n{question}\n\n---\n\nADVISOR ANSWERS:\n\n{blocks}"
         try:
-            text = await self._stream(client, agg, prompts.with_rules(prompts.SYNTHESIS, self.challenge),
+            text = await self._stream(client, agg,
+                                      prompts.with_rules(prompts.SYNTHESIS, self.challenge)
+                                      + self._reply_note(),
                                       self._with_memory(user),
                                       config.MAX_TOKENS_SYNTHESIS, 0.4)
             if not text:
@@ -200,7 +226,7 @@ class Orchestrator:
             await self.emit("stage", None,
                             {"stage": "drafting", "label": "drafting the initial plan"})
             await self._announce(drafter, "drafter", 0)
-            plan = await self._stream(client, drafter, prompts.with_rules(prompts.DEBATE_DRAFTER, self.challenge),
+            plan = await self._stream(client, drafter, self._internal_note() + prompts.with_rules(prompts.DEBATE_DRAFTER, self.challenge),
                                       self._with_memory(question),
                                       config.MAX_TOKENS_PROPOSER, 0.7)
             await self.emit("agent_done", drafter.key, {"text": plan})
@@ -220,7 +246,7 @@ class Orchestrator:
                 crit_user = (f"ORIGINAL GOAL:\n{question}\n\n"
                              f"PLAN TO ATTACK (round {rnd}):\n{plan}")
                 try:
-                    critique = await self._stream(client, critic, prompts.with_rules(prompts.DEBATE_CRITIC, self.challenge),
+                    critique = await self._stream(client, critic, self._internal_note() + prompts.with_rules(prompts.DEBATE_CRITIC, self.challenge),
                                                   crit_user, config.MAX_TOKENS_CRITIC, 0.8)
                 except ModelError as exc:
                     await self.emit("agent_error", critic.key, {"error": str(exc)})
@@ -243,7 +269,7 @@ class Orchestrator:
                     await self._announce(critic, "critic", rnd)
                     try:
                         critique = await self._stream(
-                            client, critic, prompts.with_rules(prompts.DEBATE_CRITIC, self.challenge), crit_user,
+                            client, critic, self._internal_note() + prompts.with_rules(prompts.DEBATE_CRITIC, self.challenge), crit_user,
                             config.MAX_TOKENS_CRITIC, 0.8)
                     except ModelError as exc2:
                         await self.emit("agent_error", critic.key, {"error": str(exc2)})
@@ -260,7 +286,7 @@ class Orchestrator:
                             f"THE CRITIC ATTACKED IT (round {rnd}):\n{critique}\n\n"
                             "Revise where the Critic is right. Push back where they are wrong.")
                 try:
-                    plan = await self._stream(client, drafter, prompts.with_rules(prompts.DEBATE_DRAFTER, self.challenge),
+                    plan = await self._stream(client, drafter, self._internal_note() + prompts.with_rules(prompts.DEBATE_DRAFTER, self.challenge),
                                               rev_user, config.MAX_TOKENS_PROPOSER, 0.7)
                 except ModelError as exc:
                     await self.emit("agent_error", drafter.key, {"error": str(exc)})
@@ -275,7 +301,7 @@ class Orchestrator:
         await self._announce(judge, "judge")
         judge_user = self._judge_input(question, plan, critiques)
         try:
-            verdict = await self._stream(client, judge, prompts.with_rules(prompts.DEBATE_JUDGE, self.challenge),
+            verdict = await self._stream(client, judge, prompts.with_rules(prompts.DEBATE_JUDGE, self.challenge) + self._reply_note(),
                                          self._with_memory(judge_user),
                                          config.MAX_TOKENS_JUDGE, 0.4)
             if not verdict:
@@ -337,6 +363,9 @@ class Orchestrator:
 
     async def run(self, mode: str, question: str) -> str:
         self.question = question
+        self.language = language.detect(question)
+        if self.language != "English":
+            await self.emit("language", None, {"language": self.language})
         limits = httpx.Limits(max_connections=12, max_keepalive_connections=6)
         async with httpx.AsyncClient(limits=limits) as client:
             if mode == "moa":

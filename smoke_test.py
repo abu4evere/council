@@ -365,7 +365,39 @@ async def main():
         print(f"[FAIL] retry budget: deadline={has_deadline} "
               f"clamped={clamps_sleep} worst={worst}")
 
-    # 18. Memory preamble must survive being passed through a real run.
+    # 18. LANGUAGE. The debate runs in English for consistency across four
+    #     vendors, but the reply comes back in the language the question was
+    #     asked in. Only the seats the user READS switch; the ones talking to
+    #     each other stay in English, because a translation layer in the middle
+    #     of a debate loses precision for no reader.
+    from engine import language as _lang
+    lang_cases = [
+        ("English", "Should I build one big project or five small ones?"),
+        ("Russian", "Стоит ли мне создавать проект"),
+        ("Uzbek", "Men bitta katta loyiha qilishim kerakmi yoki boshqa"),
+        ("English", "hi"),
+        ("English", ""),
+        ("English", "I use Docker and Kubernetes daily"),
+    ]
+    wrong = [(w, _lang.detect(t)) for w, t in lang_cases if _lang.detect(t) != w]
+    if not wrong:
+        print(f"[PASS] language detected correctly ({len(lang_cases)} cases, "
+              f"including short and empty input)")
+    else:
+        ok = False
+        print(f"[FAIL] language detection: {wrong}")
+
+    english_silent = _lang.reply_instruction("English") == ""
+    names_lang = "Uzbek" in _lang.reply_instruction("Uzbek")
+    protects_code = "JSON block" in _lang.reply_instruction("Russian")
+    if english_silent and names_lang and protects_code:
+        print("[PASS] reply instruction: silent for English, names others, protects code")
+    else:
+        ok = False
+        print(f"[FAIL] reply instruction: silent={english_silent} "
+              f"names={names_lang} protects={protects_code}")
+
+    # 19. Memory preamble must survive being passed through a real run.
     from engine import prompts as P
     pre = P.memory_preamble([{"user_prompt": "earlier q", "final_answer": "earlier a"}])
     if "earlier q" in pre and "earlier a" in pre and "Current question" in pre:
