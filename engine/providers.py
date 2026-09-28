@@ -3,10 +3,19 @@
 Every provider here speaks the OpenAI-compatible chat-completions protocol, so
 one client handles all of them -- only the base URL and the API key change.
 
-FREE TIERS. Each of these has a free tier that needs no card. Limits and model
-names change often, so treat the numbers below as "roughly what to expect" and
-confirm at the signup link. `python check_key.py` validates whatever you have
-configured against the live APIs.
+WHAT "FREE" MEANS HERE, AND A WARNING. Four providers are CONFIRMED working
+without payment by this project, because a real call was made: Groq, Google AI
+Studio, Cerebras and NVIDIA NIM. Anything marked UNVERIFIED is advertised as
+free and has not been proven so.
+
+That distinction exists because it was got wrong. SambaNova was recorded as
+"free tier, no card" on the strength of its public model listing, which needs
+no key; a real call with a valid key returns HTTP 402 PAYMENT_METHOD_REQUIRED.
+A catalogue you can read for free is not a catalogue you can use for free.
+
+Limits and model names change often, so confirm at the signup link.
+`python check_key.py` validates whatever you have configured against the live
+APIs -- and only a real completion proves a provider is usable.
 
 You do NOT need all of them. Council runs with whatever keys are present and
 skips the rest -- one key works, four is better because the answers differ more.
@@ -148,7 +157,8 @@ PROVIDERS: dict[str, Provider] = {
         base_url="https://api.mistral.ai/v1",
         env_var="MISTRAL_API_KEY",
         signup="https://console.mistral.ai",
-        notes="Free experiment tier. Needs phone verification.",
+        notes="UNVERIFIED by this project: a free experiment tier is advertised "
+              "and phone verification is required. Confirm before relying on it.",
     ),
     "openrouter": Provider(
         key="openrouter",
@@ -164,8 +174,10 @@ PROVIDERS: dict[str, Provider] = {
         base_url="https://api.sambanova.ai/v1",
         env_var="SAMBANOVA_API_KEY",
         signup="https://cloud.sambanova.ai/apis",
-        notes="Free tier, no card. Brings Llama and MiniMax, and runs duplicates "
-              "of other families on a separate rate-limit bucket.",
+        notes="REQUIRES A PAYMENT METHOD. Verified 2026-09-27: a valid key still "
+              "returns HTTP 402 PAYMENT_METHOD_REQUIRED with balance_units 0. "
+              "Its catalogue (Llama, MiniMax) is listed publicly without a key, "
+              "which makes it look free when it is not.",
         max_parallel=2,
         # Verified 2026-09-27 from SambaNova's PUBLIC /models endpoint, which
         # needs no key. Llama and MiniMax are families nothing else here has;
@@ -197,8 +209,8 @@ PROVIDERS: dict[str, Provider] = {
         base_url="https://router.huggingface.co/v1",
         env_var="HF_TOKEN",
         signup="https://huggingface.co/settings/tokens (read token is enough)",
-        notes="Router in front of many open models. Free tier is small but the "
-              "variety is unmatched.",
+        notes="UNVERIFIED by this project. Router in front of many open models; "
+              "free allowance is small. Confirm before relying on it.",
         max_parallel=1,
         alternates=(),
     ),
@@ -209,7 +221,8 @@ PROVIDERS: dict[str, Provider] = {
         env_var="CF_API_TOKEN",
         signup="https://dash.cloudflare.com -> AI -> Workers AI. Needs BOTH "
                "CF_API_TOKEN and CF_ACCOUNT_ID.",
-        notes="Free daily allowance. Serves Llama, Mistral, Gemma, Qwen.",
+        notes="UNVERIFIED by this project. A free daily allowance is advertised; "
+              "serves Llama, Mistral, Gemma, Qwen. Confirm before relying on it.",
         max_parallel=2,
         alternates=(),
     ),
