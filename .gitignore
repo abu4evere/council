@@ -5,3 +5,4 @@ council.db
 .venv/
 server.log
 tools/
+tunnel.log
