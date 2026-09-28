@@ -466,7 +466,30 @@ async def main():
         ok = False
         print("[FAIL] block spec appears more than once in a prompt")
 
-    # 22. Memory preamble must survive being passed through a real run.
+    # 22. A FAILED CRITIC MUST NOT COST THE REMAINING ROUNDS. Observed: the
+    #     round-1 critic failed, the loop broke, and rounds 2 and 3 never ran --
+    #     so the Judge ruled on a completely unchallenged draft while the user
+    #     waited seven minutes and paid for a "debate" that never happened.
+    result, events = await run_mode("debate", fail_roles={"critic"})
+    judged = any(a == config.DEBATE_JUDGE.key for t, a in events if t == "agent_done")
+    # Every critic candidate fails here, so the run must still reach a verdict
+    # rather than hang or raise.
+    if result and judged:
+        print("[PASS] all critics failing still reaches a verdict")
+    else:
+        ok = False
+        print(f"[FAIL] critic failure -> judged={judged} result={bool(result)}")
+
+    # And the drafter must still have been given its rounds when the critic works.
+    result2, events2 = await run_mode("debate")
+    critic_turns = sum(1 for t, a in events2 if t == "agent_done" and a == config.DEBATE_CRITIC.key)
+    if critic_turns >= config.DEBATE_ROUNDS:
+        print(f"[PASS] a healthy debate runs all {config.DEBATE_ROUNDS} critique rounds")
+    else:
+        ok = False
+        print(f"[FAIL] only {critic_turns} critique rounds ran, want {config.DEBATE_ROUNDS}")
+
+    # 23. Memory preamble must survive being passed through a real run.
     from engine import prompts as P
     pre = P.memory_preamble([{"user_prompt": "earlier q", "final_answer": "earlier a"}])
     if "earlier q" in pre and "earlier a" in pre and "Current question" in pre:

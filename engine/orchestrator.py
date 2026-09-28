@@ -198,6 +198,49 @@ class Orchestrator:
 
     # -- Feature 2 ----------------------------------------------------------
 
+
+    async def _critique(self, client, crit_user: str, rnd: int):
+        """One round of criticism, trying each available critic in turn.
+
+        The old code tried exactly one replacement and then broke out of the
+        whole loop. Measured latency explains why that mattered: the configured
+        critic took 216 SECONDS to fail while three alternatives answered in
+        under two. A single retry on a bad day is not enough, and giving up
+        afterwards throws away rounds that would have worked.
+
+        Returns the critique, or None when every candidate failed.
+        """
+        tried: set[str] = set()
+        seat = self.critic
+        for attempt in range(3):
+            if seat is None or seat.model in tried:
+                break
+            tried.add(seat.model)
+            if attempt:
+                await self.emit("stage", None,
+                                {"stage": "critique",
+                                 "label": f"critic unavailable - round {rnd} "
+                                          f"retrying with {seat.model}"})
+            await self._announce(seat, "critic", rnd)
+            try:
+                text = await self._stream(
+                    client, seat,
+                    self._internal_note()
+                    + prompts.with_rules(prompts.DEBATE_CRITIC, self.challenge),
+                    crit_user, config.MAX_TOKENS_CRITIC, 0.8)
+                # A working critic becomes the default for later rounds, so one
+                # slow model is paid for once rather than every round.
+                self.critic = seat
+                return text
+            except ModelError as exc:
+                await self.emit("agent_error", seat.key, {"error": str(exc)})
+                seat = config.resolve_seat(
+                    config.DEBATE_CRITIC,
+                    avoid=tried | {self.drafter.model} if self.drafter else tried,
+                    avoid_providers={seat.provider},
+                )
+        return None
+
     async def run_debate(self, client, question: str, seed_plan: str | None = None) -> str:
         # Resolved in order, each avoiding the models already taken, so a
         # single-provider fallback still gives three different voices where it
@@ -220,6 +263,9 @@ class Orchestrator:
 
         transcript: list[str] = []
         critiques: list[str] = []
+        failed_rounds = 0
+        self.critic = critic
+        self.drafter = drafter
         plan = seed_plan
 
         if plan is None:
@@ -242,39 +288,23 @@ class Orchestrator:
                 await self.emit("stage", None,
                                 {"stage": "critique",
                                  "label": f"round {rnd} of {config.DEBATE_ROUNDS} - critique"})
-                await self._announce(critic, "critic", rnd)
                 crit_user = (f"ORIGINAL GOAL:\n{question}\n\n"
                              f"PLAN TO ATTACK (round {rnd}):\n{plan}")
-                try:
-                    critique = await self._stream(client, critic, self._internal_note() + prompts.with_rules(prompts.DEBATE_CRITIC, self.challenge),
-                                                  crit_user, config.MAX_TOKENS_CRITIC, 0.8)
-                except ModelError as exc:
-                    await self.emit("agent_error", critic.key, {"error": str(exc)})
-                    # One bad Critic used to end the whole debate: a round-1
-                    # failure skipped rounds 2 and 3 entirely and the Judge got
-                    # an unchallenged draft. Try a different model once before
-                    # giving up -- the usual cause is this model, not the plan.
-                    replacement = config.resolve_seat(
-                        config.DEBATE_CRITIC,
-                        avoid={critic.model, drafter.model},
-                        avoid_providers={critic.provider},
-                    )
-                    if replacement is None or replacement.model == critic.model:
+                critique = await self._critique(client, crit_user, rnd)
+                if critique is None:
+                    # This round produced nothing. That is a reason to skip the
+                    # round, NOT to abandon the debate: a transient failure in
+                    # round 1 used to cost rounds 2 and 3 as well, and the Judge
+                    # then ruled on a completely unchallenged draft. The plan
+                    # still exists, so try the next round against it.
+                    failed_rounds += 1
+                    if failed_rounds >= 2:
+                        await self.emit("stage", None,
+                                        {"stage": "critique",
+                                         "label": "critics unavailable - going to the verdict"})
                         break
-                    await self.emit("stage", None,
-                                    {"stage": "critique",
-                                     "label": f"critic failed - retrying round {rnd} "
-                                              f"with {replacement.model}"})
-                    critic = replacement
-                    await self._announce(critic, "critic", rnd)
-                    try:
-                        critique = await self._stream(
-                            client, critic, self._internal_note() + prompts.with_rules(prompts.DEBATE_CRITIC, self.challenge), crit_user,
-                            config.MAX_TOKENS_CRITIC, 0.8)
-                    except ModelError as exc2:
-                        await self.emit("agent_error", critic.key, {"error": str(exc2)})
-                        break
-                await self.emit("agent_done", critic.key, {"text": critique})
+                    continue
+                await self.emit("agent_done", self.critic.key, {"text": critique})
                 transcript.append(f"CRITIC (round {rnd}):\n{critique}")
 
                 await self.emit("stage", None,

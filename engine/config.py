@@ -121,8 +121,13 @@ AGGREGATOR = Agent(key="synthesis", label="Synthesis",
 DEBATE_ARCHITECT = Agent(key="drafter", label="Drafter",
                          provider="groq", model="openai/gpt-oss-120b", color="#c96442")
 
+# Moved off deepseek after measuring it: on a realistic round-2 prompt it took
+# 216 SECONDS and still failed, while three alternatives answered in under two.
+# Worse, failing there tripped the circuit breaker on its whole provider, which
+# took the Skeptic down with it. Latency is a correctness property when a seat
+# can stall a run.
 DEBATE_CRITIC = Agent(key="critic", label="Critic",
-                      provider="nvidia", model="deepseek-ai/deepseek-v4.1-flash", color="#3fa87a")
+                      provider="cerebras", model="qwen-3.8-27b", color="#3fa87a")
 
 # The Judge reads the final plan plus every critique -- the single largest input
 # in the system, and the seat that failed with HTTP 413 on Groq's 8000 tok/min
