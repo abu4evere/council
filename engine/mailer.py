@@ -1,14 +1,19 @@
 """Sending verification codes.
 
-WHAT THIS NEEDS FROM YOU. An SMTP account. A personal Gmail works and is the
-practical choice when there is no domain yet: turn on 2-step verification, make
-an App Password, and put it in SMTP_PASSWORD. Roughly 500 messages a day, free,
-no domain required.
+WHAT THIS NEEDS FROM YOU. An SMTP account. Any provider works; the settings are
+plain SMTP and nothing here is vendor-specific.
 
-A WARNING ABOUT THAT. A Gmail App Password grants full SMTP access to a real
-email account -- it is a more sensitive credential than any API key here, and
-it belongs in .env and nowhere else. A dedicated address rather than a primary
-one is the safer choice.
+    Brevo     smtp-relay.brevo.com:587, 300/day free. The password is an SMTP
+              KEY generated on their SMTP page, not an API key -- they are
+              different credentials and the API key fails to authenticate.
+              The From address must be a verified sender on the account.
+    Gmail     smtp.gmail.com:587 with an App Password. Works without a domain,
+              but mail from a personal mailbox to strangers lands in spam
+              often enough to matter, and the App Password grants full access
+              to a real inbox rather than just the right to send.
+
+A transactional provider is the better choice once anyone but you is signing
+up: deliverability is the product, and the credential only permits sending.
 
 WITHOUT CREDENTIALS, codes are printed to the server console instead of sent.
 That is not a stub to be replaced later: it is how the flow is developed and
@@ -101,7 +106,11 @@ def send_code(to_address: str, code: str) -> tuple[bool, str]:
                 s.send_message(msg)
         return True, "sent"
     except smtplib.SMTPAuthenticationError:
-        return False, ("the mail account rejected the login -- for Gmail this "
-                       "means an App Password is required, not the normal one")
+        # Both common providers reject the obvious credential, for different
+        # reasons, and the raw error says neither.
+        return False, ("the mail server rejected the login -- Brevo wants the "
+                       "SMTP key from its SMTP page rather than an API key, "
+                       "and Gmail wants an App Password rather than the "
+                       "account password")
     except Exception as exc:
         return False, f"{type(exc).__name__}: {str(exc)[:120]}"
