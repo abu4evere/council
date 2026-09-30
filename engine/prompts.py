@@ -31,8 +31,8 @@ plan that was never going to survive anyway.
 # decisions and nothing surfaced the gap.
 _BLOCK_SPEC = """
 
-Then, as the LAST thing in your reply, emit the same material as machine-readable \
-data so the interface can show it. Use exactly this fence and put nothing after it:
+BEGIN YOUR REPLY WITH THIS BLOCK, before the prose sections -- not after them, not at the end. FIRST. The interface reads it and strips it out, so the reader never sees it and its position costs you nothing. Write it while the whole picture is still in front of you; composing the prose first and the data afterwards is exactly how the data ends up missing. Emit the material as machine-readable \
+data so the interface can show it. Use exactly this fence:
 
 ```json council-disagreements
 {"disagreements": [
@@ -60,8 +60,9 @@ into one fence and decisions into another is the single most common way this \
 gets emitted wrong.
 - Both keys must be present every time. If they genuinely agreed, write \
 "disagreements": [] -- do not drop the key.
-- This is IN ADDITION to the prose sections above, not instead of them.
-- Emit the block even when your prose already covered the same ground.
+- This is IN ADDITION to the prose, not instead of it. You write the same material twice, once as data and once as prose. That is intended.
+- Emit the block even when the prose covers the same ground. ESPECIALLY then.
+- Your prose headings still map to these keys: "UNRESOLVED" or "DISAGREEMENTS" is `disagreements`; "DECIDE THESE" or "OPEN QUESTIONS" is `decisions`.
 - Never leave a prose heading standing with nothing under it. If a section \
 would be empty, write one line saying so ("The advisors agreed here.") or \
 leave the heading out entirely."""
