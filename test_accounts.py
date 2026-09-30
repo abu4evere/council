@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 os.environ["COUNCIL_PASSWORD"] = ""          # accounts mode, not shared password
+os.environ["ALLOW_LEGACY_SIGNUP"] = "true"   # these suites predate email verification
 os.environ.setdefault("GROQ_API_KEY", "test-key-not-used")
 
 import db  # noqa: E402

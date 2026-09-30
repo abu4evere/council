@@ -1,105 +1,127 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 560" width="820" height="560" font-family="ui-sans-serif, -apple-system, Segoe UI, Inter, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 664" width="880" height="664"
+     font-family="ui-sans-serif, -apple-system, 'Segoe UI', system-ui, sans-serif">
+  <!-- Monochrome, with one exception: the stance glyphs. Same rule as the rest
+       of the product - if it is coloured, it is a model taking a position.
+       Fonts are generic stacks on purpose: an SVG loaded through <img> cannot
+       fetch a webfont, so naming IBM Plex here would silently fall back. -->
   <style>
-    .bg    { fill: #141413; }
-    .card  { fill: #1c1c1a; stroke: #302f2c; }
-    .lane  { fill: #191917; stroke: #262523; stroke-dasharray: 4 4; }
-    .t     { fill: #f0eee6; font-size: 13px; font-weight: 600; }
-    .s     { fill: #a5a29a; font-size: 11px; }
-    .f     { fill: #6e6b63; font-size: 10px; }
-    .hdr   { fill: #c96442; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
-    .arrow { stroke: #4a4844; stroke-width: 1.5; fill: none; marker-end: url(#a); }
+    .bg    { fill: #0C0C0D; }
+    .lane  { fill: #0F0F12; stroke: #1E1E23; }
+    .card  { fill: #141416; stroke: #242429; }
+    .t     { fill: #EDEDEE; font-size: 13px; font-weight: 600; }
+    .s     { fill: #92929B; font-size: 11px; }
+    .f     { fill: #80808B; font-size: 10px; }
+    .m     { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .hdr   { fill: #EDEDEE; font-size: 10.5px; font-weight: 700; letter-spacing: .16em;
+             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .glyph { font-size: 13px; font-weight: 700;
+             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .agree   { fill: #5BD6A0; }
+    .neutral { fill: #E8C55A; }
+    .dissent { fill: #FF5C5C; }
+    .arrow { stroke: #3A3A42; stroke-width: 1.4; fill: none; marker-end: url(#a); }
+    .loop  { stroke: #3A3A42; stroke-width: 1.2; fill: none; stroke-dasharray: 3 4;
+             marker-end: url(#a); }
   </style>
   <defs>
     <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#4a4844"/>
+      <path d="M0,0 L10,5 L0,10 z" fill="#3A3A42"/>
     </marker>
   </defs>
 
-  <rect class="bg" width="820" height="560"/>
+  <rect class="bg" width="880" height="664"/>
+  <text class="hdr" x="32" y="36">UNSTUCK &#8212; REQUEST FLOW</text>
 
-  <text class="hdr" x="32" y="34">COUNCIL AI — REQUEST FLOW</text>
+  <!-- the question -->
+  <rect class="card" x="32" y="56" width="248" height="52" rx="10"/>
+  <text class="t" x="48" y="80">Your question</text>
+  <text class="f m" x="48" y="97">browser &#183; phone or laptop</text>
+  <path class="arrow" d="M156 108 L156 132"/>
 
-  <!-- prompt -->
-  <rect class="card" x="32" y="52" width="180" height="46" rx="10"/>
-  <text class="t" x="48" y="72">Your question</text>
-  <text class="f" x="48" y="88">browser · phone or laptop</text>
+  <!-- 1. fan out -->
+  <rect class="lane" x="32" y="136" width="816" height="178" rx="12" stroke-dasharray="4 4"/>
+  <text class="hdr" x="52" y="162">1 &#8212; FAN OUT, IN PARALLEL</text>
+  <text class="s" x="52" y="182">Five models, five conflicting framings, four different vendors.</text>
 
-  <!-- stage 1 -->
-  <rect class="lane" x="32" y="122" width="756" height="150" rx="12"/>
-  <text class="hdr" x="48" y="144">1 — FAN OUT, IN PARALLEL</text>
-  <text class="s" x="48" y="162">Five models, five conflicting framings, four different vendors.</text>
+  <g>
+    <rect class="card" x="52" y="196" width="145" height="98" rx="9"/>
+    <text class="glyph agree" x="66" y="222">&#10003;</text>
+    <text class="t" x="84" y="222" font-size="12.5">Pragmatist</text>
+    <text class="f m" x="66" y="242">groq</text>
+    <text class="f m" x="66" y="256">gpt-oss-120b</text>
+    <text class="s" x="66" y="278" font-style="italic">&#8220;ship it this week&#8221;</text>
 
-  <rect class="card" x="48" y="176" width="138" height="76" rx="9"/>
-  <circle cx="64" cy="196" r="4" fill="#c96442"/>
-  <text class="t" x="76" y="200">Pragmatist</text>
-  <text class="f" x="62" y="218">groq</text>
-  <text class="f" x="62" y="232">gpt-oss-120b</text>
-  <text class="s" x="62" y="246">“ship it this week”</text>
+    <rect class="card" x="209" y="196" width="145" height="98" rx="9"/>
+    <text class="glyph dissent" x="223" y="222">&#10007;</text>
+    <text class="t" x="241" y="222" font-size="12.5">Systems</text>
+    <text class="f m" x="223" y="242">gemini</text>
+    <text class="f m" x="223" y="256">gemini-3.8-flash</text>
+    <text class="s" x="223" y="278" font-style="italic">&#8220;what breaks later?&#8221;</text>
 
-  <rect class="card" x="198" y="176" width="138" height="76" rx="9"/>
-  <circle cx="214" cy="196" r="4" fill="#5b8def"/>
-  <text class="t" x="226" y="200">Systems</text>
-  <text class="f" x="212" y="218">gemini</text>
-  <text class="f" x="212" y="232">gemini-3.8-flash</text>
-  <text class="s" x="212" y="246">“what breaks later?”</text>
+    <rect class="card" x="366" y="196" width="145" height="98" rx="9"/>
+    <text class="glyph agree" x="380" y="222">&#10003;</text>
+    <text class="t" x="398" y="222" font-size="12.5">Contrarian</text>
+    <text class="f m" x="380" y="242">cerebras</text>
+    <text class="f m" x="380" y="256">qwen-3.8-27b</text>
+    <text class="s" x="380" y="278" font-style="italic">&#8220;the premise is wrong&#8221;</text>
 
-  <rect class="card" x="348" y="176" width="138" height="76" rx="9"/>
-  <circle cx="364" cy="196" r="4" fill="#3fa87a"/>
-  <text class="t" x="376" y="200">Contrarian</text>
-  <text class="f" x="362" y="218">cerebras</text>
-  <text class="f" x="362" y="232">qwen-3.8-27b</text>
-  <text class="s" x="362" y="246">“the premise is wrong”</text>
+    <rect class="card" x="523" y="196" width="145" height="98" rx="9"/>
+    <text class="glyph neutral" x="537" y="222">&#8776;</text>
+    <text class="t" x="555" y="222" font-size="12.5">Operator</text>
+    <text class="f m" x="537" y="242">gemini</text>
+    <text class="f m" x="537" y="256">gemma-4-31b-it</text>
+    <text class="s" x="537" y="278" font-style="italic">&#8220;cost, 2am debugging&#8221;</text>
 
-  <rect class="card" x="498" y="176" width="138" height="76" rx="9"/>
-  <circle cx="514" cy="196" r="4" fill="#a855c7"/>
-  <text class="t" x="526" y="200">Operator</text>
-  <text class="f" x="512" y="218">gemini</text>
-  <text class="f" x="512" y="232">gemma-4-31b-it</text>
-  <text class="s" x="512" y="246">“cost, 2am debugging”</text>
+    <rect class="card" x="680" y="196" width="145" height="98" rx="9"/>
+    <text class="glyph dissent" x="694" y="222">&#10007;</text>
+    <text class="t" x="712" y="222" font-size="12.5">Skeptic</text>
+    <text class="f m" x="694" y="242">nvidia</text>
+    <text class="f m" x="694" y="256">kimi-k3</text>
+    <text class="s" x="694" y="278" font-style="italic">&#8220;what&#8217;s missing?&#8221;</text>
+  </g>
 
-  <rect class="card" x="648" y="176" width="124" height="76" rx="9"/>
-  <circle cx="664" cy="196" r="4" fill="#d4a02c"/>
-  <text class="t" x="676" y="200">Skeptic</text>
-  <text class="f" x="662" y="218">nvidia</text>
-  <text class="f" x="662" y="232">kimi-k3</text>
-  <text class="s" x="662" y="246">“what’s missing?”</text>
+  <text class="f m" x="52" y="308">A seat with no key is skipped, not failed &#183; a silent seat is raced against a second vendor</text>
 
-  <!-- stage 2 -->
-  <rect class="lane" x="32" y="292" width="360" height="98" rx="12"/>
-  <text class="hdr" x="48" y="314">2 — MERGE</text>
-  <rect class="card" x="48" y="326" width="328" height="50" rx="9"/>
-  <text class="t" x="64" y="346">Synthesis</text>
-  <text class="s" x="64" y="364">Resolves contradictions. Does not average them.</text>
+  <path class="arrow" d="M300 314 L300 348"/>
+  <path class="arrow" d="M580 314 L580 348"/>
 
-  <!-- stage 3 -->
-  <rect class="lane" x="412" y="292" width="376" height="98" rx="12"/>
-  <text class="hdr" x="428" y="314">3 — DEBATE  ×3 ROUNDS</text>
-  <rect class="card" x="428" y="326" width="108" height="50" rx="9"/>
-  <text class="t" x="444" y="346">Drafter</text>
-  <text class="f" x="444" y="364">writes the plan</text>
-  <rect class="card" x="546" y="326" width="108" height="50" rx="9"/>
-  <text class="t" x="562" y="346">Critic</text>
-  <text class="f" x="562" y="364">deepseek</text>
-  <rect class="card" x="664" y="326" width="108" height="50" rx="9"/>
-  <text class="t" x="680" y="346">Judge</text>
-  <text class="f" x="680" y="364">the verdict</text>
-  <path class="arrow" d="M536,341 L544,341"/>
-  <path class="arrow" d="M654,341 L662,341"/>
-  <path class="arrow" d="M600,380 C600,398 482,398 482,382" stroke-dasharray="3 3"/>
-  <text class="f" x="512" y="404">revise, ×3</text>
+  <!-- 2. merge -->
+  <rect class="lane" x="32" y="352" width="386" height="146" rx="12" stroke-dasharray="4 4"/>
+  <text class="hdr" x="52" y="378">2 &#8212; MERGE</text>
+  <rect class="card" x="52" y="392" width="346" height="88" rx="9"/>
+  <text class="t" x="70" y="420">Synthesis</text>
+  <text class="s" x="70" y="441">Where they split, it picks a side and says</text>
+  <text class="s" x="70" y="458">why the other loses. It does not average them.</text>
 
-  <!-- output -->
-  <rect class="card" x="32" y="426" width="756" height="62" rx="10" stroke="#c96442"/>
-  <text class="t" x="48" y="450">The answer — plus DECIDE THESE</text>
-  <text class="s" x="48" y="470">The questions you had not thought to ask. This section is the point of the tool, not a footnote.</text>
+  <path class="arrow" d="M418 425 L442 425"/>
 
-  <!-- persistence note -->
-  <text class="f" x="48" y="516">Every token is persisted with a sequence number, so a phone that drops off Wi-Fi mid-run reconnects with ?after=&lt;seq&gt; and replays only what it missed.</text>
-  <text class="f" x="48" y="534">Seats whose provider has no key are skipped, not failed. One dead model never takes down a run.</text>
+  <!-- 3. debate -->
+  <rect class="lane" x="442" y="352" width="406" height="146" rx="12" stroke-dasharray="4 4"/>
+  <text class="hdr" x="462" y="378">3 &#8212; DEBATE &#215;3 ROUNDS</text>
 
-  <path class="arrow" d="M122,100 L122,120"/>
-  <path class="arrow" d="M212,274 L212,290"/>
-  <path class="arrow" d="M392,341 L410,341"/>
-  <path class="arrow" d="M600,274 L600,290"/>
-  <path class="arrow" d="M410,392 L410,424"/>
+  <rect class="card" x="462" y="392" width="115" height="62" rx="9"/>
+  <text class="t" x="476" y="418" font-size="12.5">Drafter</text>
+  <text class="f m" x="476" y="437">writes the plan</text>
+
+  <rect class="card" x="587" y="392" width="115" height="62" rx="9"/>
+  <text class="t" x="601" y="418" font-size="12.5">Critic</text>
+  <text class="f m" x="601" y="437">attacks it</text>
+
+  <rect class="card" x="712" y="392" width="116" height="62" rx="9"/>
+  <text class="t" x="726" y="418" font-size="12.5">Judge</text>
+  <text class="f m" x="726" y="437">the verdict</text>
+
+  <path class="arrow" d="M577 423 L585 423"/>
+  <path class="arrow" d="M702 423 L710 423"/>
+  <path class="loop" d="M644 454 C644 478, 519 478, 519 456"/>
+  <text class="f m" x="561" y="489">revise &#215;3</text>
+
+  <!-- the output -->
+  <path class="arrow" d="M440 498 L440 528"/>
+  <rect class="card" x="32" y="532" width="816" height="82" rx="11"/>
+  <text class="t" x="52" y="562" font-size="14">The answer &#8212; and the decisions you have not made</text>
+  <text class="s" x="52" y="584">Every run ends by naming the questions you had not thought to ask.</text>
+  <text class="s" x="52" y="602">That section is the point of the tool, not a footnote.</text>
+
+  <text class="f m" x="32" y="640">Every token is persisted with a sequence number, so a phone that drops off Wi-Fi mid-run reconnects and replays only what it missed.</text>
 </svg>

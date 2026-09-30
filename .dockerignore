@@ -1,0 +1,25 @@
+# Secrets never enter the image. Fly injects them as environment variables via
+# `fly secrets set`; a .env baked into a layer is readable by anyone who can
+# pull the image.
+.env
+.env.*
+!.env.example
+
+# The local database. Shipping it would overwrite the volume's data on deploy
+# and publish your own account and conversations.
+*.db
+*.db-wal
+*.db-shm
+
+# Local clutter and things the server never reads.
+__pycache__/
+*.pyc
+.git/
+.gitignore
+*.log
+tools/
+docs/
+examples/
+test_*.py
+smoke_test.py
+check_key.py

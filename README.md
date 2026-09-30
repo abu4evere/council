@@ -1,4 +1,4 @@
-<h1 align="center">Council AI</h1>
+<h1 align="center">Unstuck</h1>
 
 <p align="center">
   <strong>Ask several AI models the same question at once, then make them argue about it.</strong>
@@ -20,7 +20,7 @@
 Most AI tools give you an answer. The hard part of planning anything is usually
 not the answer -- it is not knowing which questions to ask.
 
-Council AI runs five models with **conflicting instructions** against the same
+Unstuck runs five models with **conflicting instructions** against the same
 prompt, merges what survives, then puts the result through a Drafter / Critic /
 Judge debate. Every mode ends with a section naming the decisions you still have
 to make.

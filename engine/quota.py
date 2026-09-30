@@ -37,6 +37,17 @@ FREE_RUNS_PER_DAY = int(os.environ.get("FREE_RUNS_PER_DAY", "5"))
 # and as a hard stop: no run may exceed this however the seats are configured.
 MAX_RUN_COST_CENTS = int(os.environ.get("MAX_RUN_COST_CENTS", "25"))
 
+# The most any ONE account may ever spend of the operator's money, in cents.
+# Lifetime, not daily: a daily cap still lets one person spend it again every
+# morning, which is not a cap, it is a rate. spent_cents already accumulates
+# and is never reset, so this needs no new state.
+#
+# It bounds PAID spend only. With PREMIUM_SEATS off every run goes to free
+# providers and costs nothing real, so in that configuration this never
+# triggers -- it is the guard for the day paid seats get switched on, and for
+# anyone who tops up credit.
+USER_SPEND_CAP_CENTS = int(os.environ.get("USER_SPEND_CAP_CENTS", "100"))
+
 # Worst-case cost per mode, in cents, from measured runs on claude-sonnet-5:
 # Quick ~$0.02, Debate ~$0.03, Full ~$0.06. Rounded up, because a reservation
 # that is too small is the failure that costs money.
@@ -70,9 +81,28 @@ def check(usage: dict, mode: str, uses_paid: bool) -> int:
             )
         return 0
 
+    spent = usage.get("spent_cents", 0)
+    if USER_SPEND_CAP_CENTS and spent >= USER_SPEND_CAP_CENTS:
+        raise Denied(
+            f"This account has reached its ${USER_SPEND_CAP_CENTS / 100:.2f} "
+            "lifetime spending limit. Add your own API keys under 'API keys' "
+            "to keep going."
+        )
+
     need = reservation_for(mode)
-    available = usage.get("credit_cents", 0) - usage.get("reserved_cents", 0)
+    # Two ceilings, and the run has to clear both: the credit actually held,
+    # and what is left of this account's lifetime allowance. Checking only the
+    # balance would let a topped-up account walk straight past the cap.
+    headroom = (USER_SPEND_CAP_CENTS - spent) if USER_SPEND_CAP_CENTS else need
+    available = min(usage.get("credit_cents", 0) - usage.get("reserved_cents", 0),
+                    headroom)
     if available < need:
+        if USER_SPEND_CAP_CENTS and headroom < need:
+            raise Denied(
+                f"This run needs about {need}c and only {max(headroom, 0)}c "
+                f"remains of this account's ${USER_SPEND_CAP_CENTS / 100:.2f} "
+                "lifetime limit. Add your own API keys to keep going."
+            )
         raise Denied(
             f"This run needs about {need}c of credit and you have "
             f"{max(available, 0)}c left. Top up, switch to a free mode, or add "

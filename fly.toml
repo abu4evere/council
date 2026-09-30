@@ -1,0 +1,49 @@
+# Fly.io deployment for Unstuck.
+#
+# COST, stated plainly because Fly has no free tier: shared-cpu-1x with 512MB
+# is $3.19 per 30 days if it runs continuously, plus $0.15/GB/month for the
+# volume. It does NOT run continuously -- auto_stop_machines below scales it to
+# zero when nobody is using it, and compute is billed per second, so an app
+# used a couple of hours a day costs well under a dollar a month. The volume is
+# billed whether the machine is running or not.
+
+app = "unstuck-ai"
+primary_region = "fra"        # Frankfurt: lowest latency of Fly's regions to Tashkent
+
+[build]
+
+[env]
+  # Must match the volume mount below.
+  COUNCIL_DB = "/data/council.db"
+  PORT = "8080"
+  # One free run for a visitor with no account, then the signup wall.
+  GUEST_RUNS = "1"
+  # Never serve an unauthenticated app on a public URL, not even
+  # in the window before the first account exists.
+  REQUIRE_ACCOUNTS = "true"
+  # Lifetime cap on how much of YOUR money any one account can spend.
+  # 100 cents = $1. Lifetime, not daily: a daily cap is a rate, not a cap.
+  USER_SPEND_CAP_CENTS = "100"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Scale to zero when idle. An open SSE stream counts as an active
+  # connection, so a run being watched will not be suspended underneath it.
+  # A run whose viewer has closed the tab CAN be cut short -- acceptable, and
+  # far cheaper than paying to idle.
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  # 256MB is cheaper but tight for five concurrent streams; an out-of-memory
+  # kill mid-run is a worse failure than a few cents. With scale-to-zero the
+  # difference is pennies. Drop it with `fly scale memory 256` if you disagree.
+  memory = "512mb"
+
+[mounts]
+  source = "unstuck_data"
+  destination = "/data"

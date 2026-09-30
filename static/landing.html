@@ -1,31 +1,53 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#141413">
-<title>Council AI — five models answer, then argue about it</title>
-<meta name="description" content="Most AI gives you one answer. Council AI runs five models from different vendors against the same question, then makes them debate it — and ends by naming the decisions you still have to make.">
-<meta property="og:title" content="Council AI">
+<meta name="theme-color" content="#0C0C0D">
+<title>Unstuck — five models answer, then argue about it</title>
+<meta name="description" content="Most AI gives you one answer. Unstuck runs five models from different vendors against the same question, then makes them debate it — and ends by naming the decisions you still have to make.">
+<meta property="og:title" content="Unstuck">
 <meta property="og:description" content="Five models answer. Then they argue. You get the questions you didn't know to ask.">
 <meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/landing.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9878;</text></svg>">
+<link rel="icon" href="/static/logo.svg">
+<script>
+  // Runs before first paint. Reading the stored theme after the stylesheet has
+  // applied would show one frame of the wrong colour on every load, which is
+  // the single most noticeable flaw a theme switcher can have.
+  (function () {
+    try {
+      var saved = localStorage.getItem("unstuck-theme");
+      var wants = saved || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+      document.documentElement.setAttribute("data-theme", wants);
+    } catch (e) { /* private mode: the dark default in the markup stands */ }
+  })();
+</script>
 </head>
 <body>
 
 <header class="nav" id="nav">
   <a class="brand" href="/">
-    <span class="brand-mark">&#9878;</span>
-    <span>Council&nbsp;AI</span>
+    <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M25.5 21.5 A11 11 0 1 1 21.5 6.5" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/><path d="M17.5 15 L28 5.4" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/><path d="M22.6 5 L28.4 5 L28.4 10.8" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>Unstuck</span>
   </a>
   <nav class="nav-links">
-    <a href="#how">How it works</a>
-    <a href="#proof">Why five</a>
-    <a href="#modes">Modes</a>
+    <a href="#run">A real run</a>
     <a href="https://github.com/abu4evere/council" target="_blank" rel="noopener">Source</a>
   </nav>
   <div class="nav-cta">
+    <button id="theme-toggle" class="theme-btn" type="button"
+            aria-label="Switch between light and dark">
+      <svg class="t-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/>
+      </svg>
+      <svg class="t-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.8 6.8 0 0 0 10.5 10.5Z"/>
+      </svg>
+    </button>
     <a class="btn ghost" href="/app?mode=login">Sign in</a>
     <a class="btn solid" href="/app?mode=signup">Get started</a>
   </div>
@@ -39,10 +61,10 @@
       <p class="eyebrow">Multi&#8209;model deliberation</p>
       <h1>
         One model tells you what you asked.<br>
-        <span class="accent">Five models tell you what you missed.</span>
+        Five models tell you what you <em>missed</em>.
       </h1>
       <p class="lede">
-        Council AI puts your question to five models from four different vendors
+        Unstuck puts your question to five models from four different vendors
         at once, then makes them argue about the answer. You get one merged
         response &mdash; and a list of the decisions you still have to make.
       </p>
@@ -55,15 +77,16 @@
 
     <div class="hero-art reveal" style="--d:.12s">
       <div class="term" id="demo">
-        <div class="term-bar"><i></i><i></i><i></i><span>council</span></div>
+        <div class="term-bar"><i></i><i></i><i></i><span>unstuck</span></div>
         <div class="term-body">
           <p class="term-q" id="demo-q"></p>
+          <div class="rail-label">Model stance</div>
           <div class="term-grid" id="demo-grid">
-            <div class="chip" data-seat="0" style="--c:#c96442"><b>Pragmatist</b><span class="chip-state">waiting</span></div>
-            <div class="chip" data-seat="1" style="--c:#5b8def"><b>Systems</b><span class="chip-state">waiting</span></div>
-            <div class="chip" data-seat="2" style="--c:#3fa87a"><b>Contrarian</b><span class="chip-state">waiting</span></div>
-            <div class="chip" data-seat="3" style="--c:#a855c7"><b>Operator</b><span class="chip-state">waiting</span></div>
-            <div class="chip" data-seat="4" style="--c:#d4a02c"><b>Skeptic</b><span class="chip-state">waiting</span></div>
+            <div class="chip" data-seat="0"><b>Pragmatist</b><span class="chip-state">waiting</span></div>
+            <div class="chip" data-seat="1"><b>Systems</b><span class="chip-state">waiting</span></div>
+            <div class="chip" data-seat="2"><b>Contrarian</b><span class="chip-state">waiting</span></div>
+            <div class="chip" data-seat="3"><b>Operator</b><span class="chip-state">waiting</span></div>
+            <div class="chip" data-seat="4"><b>Skeptic</b><span class="chip-state">waiting</span></div>
           </div>
           <div class="term-verdict" id="demo-verdict">
             <span class="verdict-label">Decide these</span>
@@ -79,150 +102,97 @@
     </div>
   </section>
 
-  <!-- ─────────────────────────── problem ─────────────────────────── -->
-  <section class="band">
-    <div class="wrap narrow reveal">
-      <h2>The answer was never the hard part</h2>
-      <p class="big">
-        Ask one model how to build something and it will tell you. Confidently.
-        What it will not tell you is which assumption it quietly made on your
-        behalf, or which decision you have not realised you are about to make.
-      </p>
-      <p class="big dim">
-        Council AI is built around that gap. Every run ends with
-        <b class="accent">Decide these</b> &mdash; the questions you did not think
-        to ask, ordered by how much depends on them.
-      </p>
-    </div>
-  </section>
-
-  <!-- ─────────────────────────── how ─────────────────────────── -->
-  <section id="how" class="wrap">
-    <h2 class="center reveal">How it works</h2>
-    <div class="steps">
-      <article class="step reveal">
-        <span class="step-n">1</span>
-        <h3>Five models, five instructions</h3>
-        <p>
-          The same question goes to five models at once &mdash; each given a
-          <em>conflicting</em> brief. One optimises for shipping this week.
-          One assumes the premise is wrong. One asks what nobody has accounted for.
-        </p>
-      </article>
-      <article class="step reveal" style="--d:.08s">
-        <span class="step-n">2</span>
-        <h3>One merges them</h3>
-        <p>
-          A sixth model reads every proposal and resolves the contradictions
-          instead of averaging them. Where two models disagree, it picks and
-          says why the other loses.
-        </p>
-      </article>
-      <article class="step reveal" style="--d:.16s">
-        <span class="step-n">3</span>
-        <h3>Then they argue</h3>
-        <p>
-          A Drafter writes the plan, a Critic on a different vendor attacks it,
-          the Drafter revises. Three rounds. A Judge rules. A model cannot see
-          the blind spots that produced its own flaws &mdash; so it never reviews itself.
-        </p>
-      </article>
-    </div>
-    <figure class="arch reveal">
-      <img src="/static/architecture.svg" alt="Request flow: five parallel models, a merge step, three debate rounds, then the answer">
-    </figure>
-  </section>
-
-  <!-- ─────────────────────────── proof ─────────────────────────── -->
-  <section id="proof" class="band">
-    <div class="wrap">
-      <h2 class="center reveal">Why five and not one</h2>
-      <p class="center sub reveal">
-        Four models given an identical prompt return four similar answers, and
-        merging those produces mush. So they are told to disagree. This is a real
-        run, unedited.
-      </p>
-      <p class="quoted-q reveal">&ldquo;I want to build a habit tracker app. What should I build first?&rdquo;</p>
-      <div class="quotes">
-        <blockquote class="reveal" style="--c:#c96442">
-          <header><b>Pragmatist</b><span>groq &middot; gpt&#8209;oss&#8209;120b</span></header>
-          <p>Ship a single&#8209;page web app with localStorage and persist it in the
-          browser. Host on Netlify, free, today. No build tools, no backend, no
-          authentication &mdash; literally three files.</p>
-        </blockquote>
-        <blockquote class="reveal" style="--c:#3fa87a; --d:.1s">
-          <header><b>Contrarian</b><span>cerebras &middot; qwen&#8209;3.8&#8209;27b</span></header>
-          <p>Don&rsquo;t build a tracker. Build a retention engine. 99% of habit apps
-          fail on churn, not features. Your beautiful grid is a dead artifact if
-          the user never returns on day four.</p>
-        </blockquote>
+  <!-- ───────────────────────── a real run ───────────────────────── -->
+  <section id="run" class="band">
+    <div class="wrap reveal">
+      <div class="run-head">
+        <span class="rail-label">One real run</span>
+        <span class="run-meta">28 Sep &middot; Quick &middot; 5 models</span>
       </div>
-      <p class="center note reveal">
-        Same question. Same second. Opposite advice. The merge keeps what
-        survives contact with the other.
-      </p>
-    </div>
-  </section>
+      <p class="run-q">&ldquo;I have to choose another name for this project.
+        Do you have any suggestions?&rdquo;</p>
 
-  <!-- ─────────────────────────── modes ─────────────────────────── -->
-  <section id="modes" class="wrap">
-    <h2 class="center reveal">Three depths</h2>
-    <div class="modes">
-      <div class="mode reveal">
-        <h3>Quick</h3>
-        <p class="time">~40 seconds</p>
-        <p>Five models in parallel, then a merge. For a question you want a real answer to now.</p>
-      </div>
-      <div class="mode featured reveal" style="--d:.08s">
-        <span class="tag">Most used</span>
-        <h3>Debate</h3>
-        <p class="time">~4 minutes</p>
-        <p>Drafter versus Critic across three rounds, then a verdict. For a plan that has to survive scrutiny.</p>
-      </div>
-      <div class="mode reveal" style="--d:.16s">
-        <h3>Full</h3>
-        <p class="time">~7 minutes</p>
-        <p>Quick, then the debate runs on the merged plan. For decisions you will live with for months.</p>
+      <div class="run-split">
+        <div class="run-col">
+          <span class="rail-label">Where they split</span>
+          <p class="run-topic">Naming strategy: mechanism vs. outcome</p>
+
+          <ul class="positions">
+            <li class="dissent">
+              <b>Pragmatist</b>
+              <span>Pick from a menu of descriptive, mechanism-focused names
+                &mdash; ThinkPair, DualMind, ContrastAI.</span>
+            </li>
+            <li class="agree">
+              <b>Contrarian</b>
+              <span>Name the user&rsquo;s outcome: Unstuck. Mechanism names are
+                forgettable and box you in.</span>
+            </li>
+            <li class="neutral">
+              <b>Operator</b>
+              <span>Keep &ldquo;Council&rdquo; for continuity; add
+                &ldquo;Decision&rdquo; for clarity.</span>
+            </li>
+          </ul>
+
+          <p class="run-verdict">
+            <span class="rail-label">Resolved</span>
+            Contrarian wins. Every other option describes <em>how it works</em>.
+            Only one describes what the user gets.
+          </p>
+        </div>
+
+        <div class="run-col">
+          <span class="rail-label">What it asked back</span>
+          <p class="run-sub">The part you cannot get from one model: the
+            questions you had not thought to ask.</p>
+          <ol class="asked">
+            <li>Do you have existing users, saved memories or public URLs that
+              would break with a name change?</li>
+            <li>Is your primary user a solo builder, or an enterprise team?</li>
+            <li>Will you file a trademark, and in which jurisdictions?</li>
+          </ol>
+          <p class="run-foot">This is the run that named the product you are
+            looking at.</p>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- ─────────────────────────── memory ─────────────────────────── -->
-  <section class="band">
-    <div class="wrap narrow reveal">
-      <h2>It remembers your projects</h2>
-      <p class="big">
-        Point Council at a folder of markdown notes &mdash; an Obsidian vault is
-        exactly that &mdash; and it searches them before every run. Stop pasting
-        the same context into every prompt.
-      </p>
-      <p class="big dim">
-        Every run shows precisely which notes it used. Private folders are never
-        indexed. Nothing leaves quietly.
-      </p>
-    </div>
-  </section>
-
-  <!-- ─────────────────────────── cta ─────────────────────────── -->
+  <!-- ─────────────────────────── close ─────────────────────────── -->
   <section class="wrap final reveal">
-    <h2>Ask something you actually care about</h2>
-    <p>Free to use. Free to self&#8209;host. The source is right there.</p>
+    <h2>Ask something you actually <em>care</em> about.</h2>
+    <p class="final-lede">
+      One free run, no account. Then an email and you are in.
+    </p>
     <div class="hero-cta center-cta">
       <a class="btn solid lg" href="/app?mode=signup">Create an account</a>
       <a class="btn ghost lg" href="/app?mode=login">Sign in</a>
     </div>
+
+    <ul class="vendors">
+      <li style="--brand: #6C4FD8"><svg class="v-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg><span class="v-name">OpenAI</span></li>
+      <li style="--brand: #D97757"><svg class="v-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"/></svg><span class="v-name">Anthropic</span></li>
+      <li style="--brand: #8E75B2"><svg class="v-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg><span class="v-name">Google</span></li>
+      <li style="--brand: #76B900"><svg class="v-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8.948 8.798v-1.43a6.7 6.7 0 0 1 .424-.018c3.922-.124 6.493 3.374 6.493 3.374s-2.774 3.851-5.75 3.851c-.398 0-.787-.062-1.158-.185v-4.346c1.528.185 1.837.857 2.747 2.385l2.04-1.714s-1.492-1.952-4-1.952a6.016 6.016 0 0 0-.796.035m0-4.735v2.138l.424-.027c5.45-.185 9.01 4.47 9.01 4.47s-4.08 4.964-8.33 4.964c-.37 0-.733-.035-1.095-.097v1.325c.3.035.61.062.91.062 3.957 0 6.82-2.023 9.593-4.408.459.371 2.34 1.263 2.73 1.652-2.633 2.208-8.772 3.984-12.253 3.984-.335 0-.653-.018-.971-.053v1.864H24V4.063zm0 10.326v1.131c-3.657-.654-4.673-4.46-4.673-4.46s1.758-1.944 4.673-2.262v1.237H8.94c-1.528-.186-2.73 1.245-2.73 1.245s.68 2.412 2.739 3.11M2.456 10.9s2.164-3.197 6.5-3.533V6.201C4.153 6.59 0 10.653 0 10.653s2.35 6.802 8.948 7.42v-1.237c-4.84-.6-6.492-5.936-6.492-5.936z"/></svg><span class="v-name">NVIDIA</span></li>
+      <li style="--brand: #F43E01"><span class="v-mark v-letter" aria-hidden="true">G</span><span class="v-name">Groq</span></li>
+      <li style="--brand: #F15A27"><span class="v-mark v-letter" aria-hidden="true">C</span><span class="v-name">Cerebras</span></li>
+      <li style="--brand: #17B07C"><span class="v-mark v-letter" aria-hidden="true">Co</span><span class="v-name">Cohere</span></li>
+      <li style="--brand: #D8D8E2"><span class="v-mark v-letter" aria-hidden="true">M</span><span class="v-name">Moonshot</span></li>
+    </ul>
   </section>
 
 </main>
 
 <footer class="foot">
-  <span>&#9878; Council AI</span>
+  <span class="foot-brand"><svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M25.5 21.5 A11 11 0 1 1 21.5 6.5" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/><path d="M17.5 15 L28 5.4" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/><path d="M22.6 5 L28.4 5 L28.4 10.8" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Unstuck</span>
   <span class="dot-sep">&middot;</span>
   <a href="https://github.com/abu4evere/council" target="_blank" rel="noopener">GitHub</a>
   <span class="dot-sep">&middot;</span>
   <span>MIT licensed</span>
 </footer>
 
+<script src="/static/theme.js"></script>
 <script src="/static/landing.js"></script>
 <script src="/static/demo.js"></script>
 </body>

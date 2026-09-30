@@ -55,8 +55,16 @@ depends on them. At most 4. This is the most useful thing you produce, so a vagu
 decision wastes a slot: "How will you handle errors?" is useless, "Do you need this \
 to work offline, given that it decides whether you need a backend at all?" is not.
 - Valid JSON: no comments, no trailing commas.
+- ONE block, not two. Both keys go in the same object. Splitting disagreements \
+into one fence and decisions into another is the single most common way this \
+gets emitted wrong.
+- Both keys must be present every time. If they genuinely agreed, write \
+"disagreements": [] -- do not drop the key.
 - This is IN ADDITION to the prose sections above, not instead of them.
-- Emit the block even when your prose already covered the same ground."""
+- Emit the block even when your prose already covered the same ground.
+- Never leave a prose heading standing with nothing under it. If a section \
+would be empty, write one line saying so ("The advisors agreed here.") or \
+leave the heading out entirely."""
 
 
 HOUSE_RULES = """HOW THIS COUNCIL SPEAKS -- these rules override any instinct to be agreeable.

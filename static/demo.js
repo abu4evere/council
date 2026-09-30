@@ -29,6 +29,10 @@
   const states = chips.map((c) => c.querySelector(".chip-state"));
 
   const QUESTION = "Should I build one large project or five small ones?";
+  // Two agree, two dissent, one sits on the fence -- a real spread, because
+  // a rail where everyone agrees would be arguing against the product.
+  const STANCES = ["agree", "dissent", "agree", "neutral", "dissent"];
+  const STANCE_LABEL = { agree: "agree", neutral: "partly", dissent: "dissent" };
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
   let running = false, cancelled = false, clock = 0, timer = null;
@@ -56,7 +60,7 @@
     qEl.textContent = "";
     verdictEl.classList.remove("show");
     chips.forEach((c, i) => {
-      c.classList.remove("active", "done");
+      c.classList.remove("active", "done", "agree", "neutral", "dissent");
       states[i].textContent = "waiting";
     });
     setStage("ready", false);
@@ -98,8 +102,11 @@
       if (cancelled) return;
       const i = order[n];
       chips[i].classList.remove("active");
-      chips[i].classList.add("done");
-      states[i].textContent = (1800 + Math.floor(Math.random() * 1900)).toLocaleString() + " chars";
+      // The stance is the point, and it is the only colour on the page. These
+      // are fixed rather than random: a rail that shuffles its verdicts every
+      // loop is claiming something it cannot know.
+      chips[i].classList.add("done", STANCES[i]);
+      states[i].textContent = STANCE_LABEL[STANCES[i]];
     }
 
     // 2. merge

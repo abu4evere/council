@@ -1,4 +1,4 @@
-/* Council - client */
+/* Unstuck - client */
 
 const $ = (s) => document.querySelector(s);
 const el = (tag, cls, txt) => {
@@ -109,12 +109,14 @@ function showApp() { $("#login").classList.add("hidden"); $("#app").classList.re
 function setAuthMode(mode) {
   authMode = mode;
   const signup = mode === "signup";
-  $("#auth-submit").textContent = signup ? "Create account" : "Sign in";
-  $("#auth-password").setAttribute("autocomplete", signup ? "new-password" : "current-password");
-  $("#auth-hint").textContent = signup
-    ? "At least 3 characters for the username, 8 for the password."
-    : "";
+  // Sign-in and sign-up are no longer the same form with a different button:
+  // creating an account takes three steps, signing in takes one.
+  $("#auth-form").classList.toggle("hidden", signup);
+  $("#signup-flow").classList.toggle("hidden", !signup);
+  if (signup) setSignupStep(1);
+  $("#auth-hint").textContent = "";
   $("#login-error").textContent = "";
+  $("#signup-error").textContent = "";
   document.querySelectorAll(".auth-tab").forEach((b) =>
     b.classList.toggle("active", b.dataset.tab === mode));
   // Slide the underline to the active tab. Motion here is doing a job --
@@ -167,6 +169,152 @@ $("#auth-form").addEventListener("submit", async (e) => {
   }
 });
 
+
+/* ---------------- create an account ----------------
+   Three steps. The email and the code are held here between them because the
+   server re-checks the code when the account is finally created -- there is no
+   half-verified account sitting in the database waiting to be finished. */
+
+const signupState = { email: "", code: "", cooldownUntil: 0 };
+
+function setSignupStep(n) {
+  [1, 2, 3].forEach((i) => {
+    const panel = $(["#step-email", "#step-code", "#step-profile"][i - 1]);
+    panel.classList.toggle("hidden", i !== n);
+    const dot = document.querySelector(`.step[data-step="${i}"]`);
+    if (dot) {
+      dot.classList.toggle("is-active", i === n);
+      dot.classList.toggle("is-done", i < n);
+    }
+  });
+  $("#signup-error").textContent = "";
+  const first = { 1: "#su-email", 2: "#su-code", 3: "#su-name" }[n];
+  setTimeout(() => { const e = $(first); if (e) e.focus(); }, 60);
+}
+
+function signupFail(err) {
+  $("#signup-error").textContent = err.message || "Something went wrong.";
+}
+
+async function withBusy(btn, label, fn) {
+  const was = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = label;
+  try { await fn(); } finally { btn.disabled = false; btn.textContent = was; }
+}
+
+function startResendCountdown(seconds) {
+  signupState.cooldownUntil = Date.now() + seconds * 1000;
+  const btn = $("#su-resend");
+  const tick = () => {
+    const left = Math.ceil((signupState.cooldownUntil - Date.now()) / 1000);
+    if (left > 0) {
+      btn.disabled = true;
+      btn.textContent = `Send it again in ${left}s`;
+      setTimeout(tick, 500);
+    } else {
+      btn.disabled = false;
+      btn.textContent = "Send it again";
+    }
+  };
+  tick();
+}
+
+async function sendCode(email) {
+  const res = await api("/api/signup/start", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+  signupState.email = email;
+  const where = res.delivery === "console"
+    ? "This server has no mail account set up, so the code was printed to its console."
+    : `We sent a code to ${email}. Check your spam folder if it is not there.`;
+  $("#su-sent-to").textContent = where;
+  startResendCountdown(res.cooldown || 60);
+  return res;
+}
+
+$("#step-email").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = $("#su-email").value.trim();
+  $("#signup-error").textContent = "";
+  if (!email) { $("#signup-error").textContent = "Enter your email address."; return; }
+  await withBusy($("#su-send"), "Sending...", async () => {
+    try {
+      await sendCode(email);
+      setSignupStep(2);
+    } catch (err) { signupFail(err); }
+  });
+});
+
+$("#step-code").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const code = $("#su-code").value.trim();
+  $("#signup-error").textContent = "";
+  if (code.length !== 6) { $("#signup-error").textContent = "The code is six digits."; return; }
+  await withBusy($("#su-verify"), "Checking...", async () => {
+    try {
+      await api("/api/signup/verify", {
+        method: "POST",
+        body: JSON.stringify({ email: signupState.email, code }),
+      });
+      signupState.code = code;
+      setSignupStep(3);
+    } catch (err) {
+      signupFail(err);
+      $("#su-code").select();
+    }
+  });
+});
+
+$("#su-code").addEventListener("input", (e) => {
+  // Digits only, and submit itself once six are in -- nobody wants to reach
+  // for a button after typing a code they just read off a phone.
+  const v = e.target.value.replace(/\D/g, "").slice(0, 6);
+  e.target.value = v;
+  if (v.length === 6) $("#step-code").requestSubmit();
+});
+
+$("#su-resend").addEventListener("click", async () => {
+  if (Date.now() < signupState.cooldownUntil) return;
+  $("#signup-error").textContent = "";
+  try { await sendCode(signupState.email); } catch (err) { signupFail(err); }
+});
+
+$("#su-back-email").addEventListener("click", () => {
+  signupState.code = "";
+  $("#su-code").value = "";
+  setSignupStep(1);
+});
+
+$("#step-profile").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const full_name = $("#su-name").value.trim();
+  const purpose = $("#su-purpose").value.trim();
+  const password = $("#su-password").value;
+  $("#signup-error").textContent = "";
+  if (!full_name) { $("#signup-error").textContent = "Enter your name."; return; }
+  if (password.length < 8) { $("#signup-error").textContent = "Passwords need at least 8 characters."; return; }
+  await withBusy($("#su-finish"), "Creating...", async () => {
+    try {
+      await api("/api/signup/complete", {
+        method: "POST",
+        body: JSON.stringify({
+          email: signupState.email, code: signupState.code,
+          full_name, purpose, password,
+        }),
+      });
+      showApp();
+      await boot();
+    } catch (err) {
+      signupFail(err);
+      // The code died (expired, or burnt through its attempts). Sending them
+      // back to step 1 is the only move that can still succeed.
+      if (/code/i.test(err.message || "")) setSignupStep(1);
+    }
+  });
+});
+
 $("#logout").addEventListener("click", async () => {
   try { await api("/api/logout", { method: "POST" }); } catch {}
   location.reload();
@@ -176,7 +324,8 @@ async function showWhoami() {
   try {
     const st = await api("/api/auth-status");
     if (st.username) {
-      $("#whoami-name").textContent = st.username;
+      $("#whoami-name").textContent = st.full_name || st.username;
+      $("#whoami-name").title = st.username;
       $("#whoami").classList.remove("hidden");
     }
   } catch {}
@@ -241,7 +390,7 @@ async function openConversation(cid) {
 
 function buildEmpty() {
   const d = el("div", "empty");
-  d.innerHTML = `<h2>Ask the council</h2>
+  d.innerHTML = `<h2>What are you stuck on?</h2>
     <p>Several models answer in parallel, then argue about it. You get one answer plus the questions you hadn't thought to ask.</p>
     <div class="mode-explain">
       <div><b>Quick</b><span>4 models in parallel, merged. ~20s</span></div>
@@ -300,9 +449,13 @@ function agentPanel(container, key, info, isStart) {
   head.appendChild(sw);
   head.appendChild(el("span", "chev", "▶"));
   head.appendChild(el("span", "agent-name", info.label || key));
+  // The vendor and model are not sent to the browser unless SHOW_MODEL_NAMES
+  // is on, so this is empty in normal use and the chip simply does not appear.
   const modelBit = (info.model || "").split("/").pop();
-  head.appendChild(el("span", "agent-model",
-    info.provider ? `${info.provider} · ${modelBit}` : modelBit));
+  if (modelBit) {
+    head.appendChild(el("span", "agent-model",
+      info.provider ? `${info.provider} · ${modelBit}` : modelBit));
+  }
   if (info.round) head.appendChild(el("span", "agent-round", `round ${info.round}`));
   const status = el("span", "agent-status running", "thinking...");
   head.appendChild(status);
@@ -366,7 +519,7 @@ async function renderPastTurn(t) {
         p.panel.classList.add("skipped");
         p.status.className = "agent-status skipped";
         p.status.textContent = "no key";
-        p.body.textContent = `Skipped - no API key for ${ev.provider}.`;
+        p.body.textContent = ev.reason || "This seat is not configured.";
         p.body.classList.remove("streaming");
       }
     }
@@ -722,8 +875,7 @@ function handleEvent(ev, agentsBox, turnEl) {
       p.panel.classList.add("skipped");
       p.status.className = "agent-status skipped";
       p.status.textContent = "no key";
-      p.body.textContent =
-        `Skipped - no API key for ${ev.provider}. Add one to .env to bring this seat in.`;
+      p.body.textContent = ev.reason || "This seat is not configured.";
       p.body.classList.remove("streaming");
       break;
     }
@@ -1010,13 +1162,20 @@ document.addEventListener("visibilitychange", () => {
 
 /* ---------------- boot ---------------- */
 async function boot() {
+  // boot() only runs for a signed-in session, so the trial banner is stale by
+  // definition here. Leaving it up told a new account it had no account.
+  state.guest = false;
+  const banner = $("#guest-banner");
+  if (banner) banner.remove();
+  // Also after a fresh sign-in, not only on a reload of an existing session.
+  showWhoami();
+
   const health = await api("/api/health").catch(() => null);
   if (health && !health.api_key_present) {
     toast("No API keys set. Run: python check_key.py", 9000);
   } else if (health && health.proposers_available < health.proposers_total) {
     toast(
-      `${health.proposers_available}/${health.proposers_total} models active ` +
-      `(${health.providers_configured.join(", ")}). Add more keys for a better council.`,
+      `${health.proposers_available}/${health.proposers_total} models active.`,
       7000
     );
   }

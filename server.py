@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv()
 
 import db  # noqa: E402
+from engine import mailer, verification  # noqa: E402
 from engine import (accounts, config, disagreement, keyring, memo, prompts,
                     providers, quota, vault)  # noqa: E402
 from engine.llm import check_configured_models, list_models  # noqa: E402
@@ -272,10 +273,20 @@ def optional_user(token: str | None) -> dict | None:
     return current_user(token)
 
 
+# On a public deployment the open fallback below is a hole, not a convenience:
+# a fresh instance has no accounts yet, so until the first person signs up the
+# whole app is unauthenticated and anyone who finds the URL spends the
+# operator's API keys without limit. Set this on anything reachable from the
+# internet. Signup and login stay open -- they have to -- so the first account
+# can still be created.
+REQUIRE_ACCOUNTS = os.environ.get("REQUIRE_ACCOUNTS", "").strip().lower() in ("1", "true", "yes")
+
+
 def require_user(token: str | None) -> dict | None:
     """Enforce access. Returns the user, or None in shared-password mode.
 
-    Three states:
+    Four states:
+      * REQUIRE_ACCOUNTS set -> a valid session is always required
       * accounts exist  -> a valid session is required
       * no accounts, COUNCIL_PASSWORD set -> the old shared gate still applies
       * no accounts, no password -> open (a local single-user install)
@@ -283,7 +294,7 @@ def require_user(token: str | None) -> dict | None:
     user = current_user(token)
     if user:
         return user
-    if db.user_count() > 0:
+    if REQUIRE_ACCOUNTS or db.user_count() > 0:
         raise HTTPException(status_code=401, detail="not authenticated")
     if accounts.single_user_mode():
         if not token or token not in SHARED_SESSIONS:
@@ -307,8 +318,58 @@ def _assert_owns(row_owner: str | None, user: dict | None) -> None:
         raise HTTPException(404, "no such conversation")
 
 
+# Username-and-password signup with nothing proving the address is real. Off by
+# default now: leaving it reachable would make the verified route decorative,
+# since anyone could skip it by posting to the old endpoint. Kept behind a flag
+# because a self-hoster creating their own first account has nobody to verify
+# to, and no mail server to do it with.
+ALLOW_LEGACY_SIGNUP = os.environ.get("ALLOW_LEGACY_SIGNUP", "").strip().lower() in ("1", "true", "yes")
+
+
+# --- what the chat is allowed to say about the models ----------------------
+
+SHOW_MODEL_NAMES = os.environ.get("SHOW_MODEL_NAMES", "").strip().lower() in ("1", "true", "yes")
+
+# Fields that name a vendor or a model. Stripped from every event on the way
+# out; the stored copy keeps them.
+_MODEL_FIELDS = ("model", "provider")
+
+
+def public_event(ev: dict) -> dict:
+    """An event with vendor and model names removed.
+
+    Returns the event unchanged when SHOW_MODEL_NAMES is on, and copies rather
+    than mutating either way -- these dicts come straight from the row cache
+    and from the live bus, and quietly editing them would corrupt the replay
+    for every other subscriber.
+    """
+    if SHOW_MODEL_NAMES:
+        return ev
+    out = dict(ev)
+    payload = out.get("payload")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (ValueError, TypeError):
+            payload = None
+    if isinstance(payload, dict):
+        clean = {k: v for k, v in payload.items() if k not in _MODEL_FIELDS}
+        # These read as "no key for gemini" otherwise, which names the vendor
+        # in prose rather than in a field.
+        if out.get("type") == "agent_skipped":
+            clean["reason"] = "this seat is not configured"
+        if out.get("type") == "agent_hedge":
+            clean["reason"] = "took too long, a second model was asked in parallel"
+        out["payload"] = clean
+    out.pop("model", None)
+    out.pop("provider", None)
+    return out
+
+
 @app.post("/api/signup")
 async def signup(request: Request, response: Response):
+    if not ALLOW_LEGACY_SIGNUP:
+        raise HTTPException(410, "Sign up with your email address.")
     body = await request.json()
     username = accounts.normalise_username(str(body.get("username", "")))
     password = str(body.get("password", ""))
@@ -326,6 +387,113 @@ async def signup(request: Request, response: Response):
     await asyncio.to_thread(db.create_session, token, uid, accounts.session_expiry())
     _set_session_cookie(response, token)
     return {"ok": True, "username": username}
+
+
+# --- email-verified signup -------------------------------------------------
+#
+# Step 1 sends a code. Step 2 checks it. Step 3 creates the account -- and
+# checks the code AGAIN. The code stays the proof of ownership for the whole
+# flow, so there is no half-verified state to store and nothing to expire
+# separately. Without that re-check, step 3 would be an unauthenticated
+# "create an account for any address you like" endpoint.
+
+
+async def _require_valid_code(email: str, code: str) -> None:
+    """Raise unless this code is the live one for this address."""
+    row = await asyncio.to_thread(db.get_verification, email)
+    if not row:
+        raise HTTPException(400, "Ask for a new code.")
+    if verification.expired(row["created_at"]):
+        await asyncio.to_thread(db.clear_verification, email)
+        raise HTTPException(400, "That code expired. Ask for a new one.")
+    if row["attempts"] >= verification.MAX_ATTEMPTS:
+        await asyncio.to_thread(db.clear_verification, email)
+        raise HTTPException(429, "Too many wrong codes. Ask for a new one.")
+    if not verification.code_matches(email, code, row["code_hash"]):
+        used = await asyncio.to_thread(db.count_verification_attempt, email)
+        left = verification.MAX_ATTEMPTS - used
+        if left <= 0:
+            await asyncio.to_thread(db.clear_verification, email)
+            raise HTTPException(429, "Too many wrong codes. Ask for a new one.")
+        raise HTTPException(401, f"That code is not right -- {left} tries left.")
+
+
+@app.post("/api/signup/start")
+async def signup_start(request: Request):
+    body = await request.json()
+    email = verification.normalise_email(str(body.get("email", "")))
+    problem = verification.email_problem(email)
+    if problem:
+        raise HTTPException(400, problem)
+
+    if await asyncio.to_thread(db.get_user_by_email, email):
+        # Said plainly rather than hidden. This does tell a stranger whether an
+        # address has an account here -- but the alternative is sending someone
+        # who already has an account off to wait for a code that never arrives
+        # with an explanation, and that costs more than the leak is worth.
+        raise HTTPException(409, "That email already has an account. Log in instead.")
+
+    now = time.time()
+    row = await asyncio.to_thread(db.get_verification, email)
+    sends, window_start = 1, now
+    if row:
+        if now - row["last_sent"] < verification.RESEND_COOLDOWN_SECONDS:
+            wait = int(verification.RESEND_COOLDOWN_SECONDS - (now - row["last_sent"])) + 1
+            raise HTTPException(429, f"A code was just sent. Wait {wait}s before asking again.")
+        if now - row["window_start"] < 3600:
+            window_start, sends = row["window_start"], row["sends"] + 1
+            if sends > verification.MAX_SENDS_PER_HOUR:
+                raise HTTPException(429, "Too many codes requested for that address. Try again later.")
+
+    code = verification.new_code()
+    await asyncio.to_thread(db.put_verification, email,
+                            verification.hash_code(email, code), window_start, sends)
+    sent, detail = await asyncio.to_thread(mailer.send_code, email, code)
+    if not sent:
+        # The row would otherwise strand them behind a cooldown for a code they
+        # never received, so clear it and let them retry straight away.
+        await asyncio.to_thread(db.clear_verification, email)
+        raise HTTPException(502, f"Could not send the code ({detail}).")
+    return {"ok": True, "delivery": detail,
+            "cooldown": verification.RESEND_COOLDOWN_SECONDS,
+            "expires_in": verification.CODE_TTL_SECONDS}
+
+
+@app.post("/api/signup/verify")
+async def signup_verify(request: Request):
+    body = await request.json()
+    email = verification.normalise_email(str(body.get("email", "")))
+    code = str(body.get("code", "")).strip()
+    await _require_valid_code(email, code)
+    return {"ok": True, "email": email}
+
+
+@app.post("/api/signup/complete")
+async def signup_complete(request: Request, response: Response):
+    body = await request.json()
+    email = verification.normalise_email(str(body.get("email", "")))
+    code = str(body.get("code", "")).strip()
+    full_name = str(body.get("full_name", "")).strip()
+    purpose = str(body.get("purpose", "")).strip()[:200]
+    password = str(body.get("password", ""))
+
+    await _require_valid_code(email, code)
+
+    problem = (verification.full_name_problem(full_name)
+               or accounts.password_problem(password))
+    if problem:
+        raise HTTPException(400, problem)
+
+    uid = await asyncio.to_thread(db.create_verified_user, email, full_name,
+                                  purpose, accounts.hash_password(password))
+    if uid is None:
+        raise HTTPException(409, "That email already has an account. Log in instead.")
+    await asyncio.to_thread(db.clear_verification, email)
+
+    token = accounts.new_session_token()
+    await asyncio.to_thread(db.create_session, token, uid, accounts.session_expiry())
+    _set_session_cookie(response, token)
+    return {"ok": True, "username": email, "full_name": full_name}
 
 
 @app.post("/api/login")
@@ -384,11 +552,14 @@ async def auth_status(request: Request, response: Response,
     user = current_user(council_session)
     has_accounts = await asyncio.to_thread(db.user_count) > 0
     return {
-        "mode": "accounts" if has_accounts else ("password" if accounts.single_user_mode() else "open"),
-        "required": has_accounts or accounts.single_user_mode(),
+        "mode": ("accounts" if (has_accounts or REQUIRE_ACCOUNTS)
+                 else ("password" if accounts.single_user_mode() else "open")),
+        "required": has_accounts or REQUIRE_ACCOUNTS or accounts.single_user_mode(),
         "authenticated": bool(user) or (council_session in SHARED_SESSIONS),
         "username": user["username"] if user else None,
         "can_signup": True,
+        "verified_signup": True,
+        "mail_configured": mailer.configured(),
         "guest_runs_left": (0 if user else guest_runs_left(guest_id(request, response))),
     }
 
@@ -582,7 +753,7 @@ async def api_stream(
             last_seq = after
             for ev in backlog:
                 last_seq = ev["seq"]
-                yield f"data: {json.dumps(ev)}\n\n"
+                yield f"data: {json.dumps(public_event(ev))}\n\n"
 
             if q is None:
                 # Run already finished and its bus was reaped; backlog was the
@@ -602,7 +773,7 @@ async def api_stream(
                     # Already delivered via the backlog replay above.
                     continue
                 last_seq = ev["seq"]
-                yield f"data: {json.dumps(ev)}\n\n"
+                yield f"data: {json.dumps(public_event(ev))}\n\n"
                 if ev["type"] in ("done", "failed"):
                     break
         finally:
@@ -630,7 +801,8 @@ async def api_turn_events(
     if owner is not None or user is not None:
         user = require_user(council_session)
         _assert_owns(owner, user)
-    return await asyncio.to_thread(db.events_since, turn_id, after)
+    events = await asyncio.to_thread(db.events_since, turn_id, after)
+    return [public_event(e) for e in events]
 
 
 # ---------------------------------------------------------------------------
@@ -702,13 +874,18 @@ async def api_models(provider: str = "groq", q: str = "",
 # ---------------------------------------------------------------------------
 
 @app.get("/")
-async def landing(council_session: str | None = Cookie(default=None)):
+async def landing(request: Request,
+                  council_session: str | None = Cookie(default=None)):
     """Marketing page for visitors; straight to the app if already signed in.
 
     Someone who is already logged in does not need to be sold the product they
-    are using, so they skip it.
+    are using, so they skip it -- unless they asked for this page on purpose.
+    ?home=1 is what the mark in the sidebar links to, and without it that link
+    would bounce straight back to the app and look broken.
     """
-    if current_user(council_session) or council_session in SHARED_SESSIONS:
+    asked_for_home = request.query_params.get("home") is not None
+    if not asked_for_home and (current_user(council_session)
+                               or council_session in SHARED_SESSIONS):
         return RedirectResponse("/app", status_code=302)
     return FileResponse(STATIC / "landing.html", headers={"Cache-Control": "no-store"})
 
@@ -908,7 +1085,7 @@ async def api_turn_memo(turn_id: str, save: int = 0,
         raise HTTPException(400, "that run did not finish, so there is nothing to record")
 
     events = await asyncio.to_thread(db.events_since, turn_id, 0)
-    text = memo.build(turn, events)
+    text = memo.build(turn, [public_event(e) for e in events])
     name = memo.filename_for(turn)
 
     saved_to = None

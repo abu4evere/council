@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 os.environ["COUNCIL_PASSWORD"] = ""
+os.environ["ALLOW_LEGACY_SIGNUP"] = "true"   # these suites predate email verification
 os.environ["COUNCIL_SECRET"] = "test-secret-not-the-real-one"
 os.environ["GROQ_API_KEY"] = "server-owned-key"
 

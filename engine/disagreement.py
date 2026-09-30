@@ -28,9 +28,51 @@ BLOCK = re.compile(
     r"```json\s+council-disagreements\s*(.*?)```",
     re.DOTALL | re.IGNORECASE,
 )
-# Fallback: a plain ```json fence that contains the expected key. Models drop
-# the label often enough that refusing to look costs real data.
-LOOSE = re.compile(r"```json\s*(\{.*?\"disagreements\".*?\})\s*```", re.DOTALL)
+# Fallback: a plain ```json fence that contains either expected key. Models
+# drop the label often enough that refusing to look costs real data, and a
+# block holding only "decisions" is exactly the one that used to be lost.
+LOOSE = re.compile(
+    r"```json\s*(\{.*?\"(?:disagreements|decisions)\".*?\})\s*```", re.DOTALL)
+
+# A section heading with nothing underneath it. The model puts the content in
+# the data block and leaves the heading bare, so the reader gets the word
+# "DISAGREEMENTS" followed by white space -- which reads as a broken feature
+# rather than as "they agreed".
+_EMPTY_SECTION = re.compile(
+    r"(?im)^[ \t]*(?:\#{1,6}[ \t]*|\*\*[ \t]*)"
+    r"(?:DISAGREEMENTS|OPEN QUESTIONS|DECISIONS|UNKNOWNS)"
+    r"[ \t]*\*{0,2}[ \t]*:?[ \t]*$"
+    r"[\s\-*_]*?"
+    r"(?=^[ \t]*\#{1,6}[ \t]|^[ \t]*\*\*\S|\Z)")
+
+
+def _drop_empty_sections(text: str) -> str:
+    """Remove headings left with no body.
+
+    Only the four headings this tool asks for by name, so a heading the model
+    invented and genuinely left empty is not silently eaten.
+    """
+    cleaned = _EMPTY_SECTION.sub("", text)
+    # Collapse the run of blank lines and rules the removal can leave behind.
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = re.sub(r"(?m)^[ \t]*-{3,}[ \t]*\n(?=\s*(?:-{3,}|\Z))", "", cleaned)
+    return cleaned.strip()
+
+
+def _all_blocks(answer: str) -> list:
+    """Every data block in the answer, in order, labelled or not.
+
+    Reading only the first match was the whole bug: models routinely split the
+    material across two fences, and the decisions were always in the second
+    one. That block was neither parsed nor stripped, so its JSON leaked into
+    the prose while the panel it was meant to fill stayed empty.
+    """
+    found = list(BLOCK.finditer(answer))
+    spans = [(m.start(), m.end()) for m in found]
+    for m in LOOSE.finditer(answer):
+        if not any(start <= m.start() < end for start, end in spans):
+            found.append(m)
+    return sorted(found, key=lambda m: m.start())
 
 
 @dataclass
@@ -71,15 +113,25 @@ def extract(answer: str) -> tuple[str, list[Point], list[Decision]]:
     if not answer:
         return answer, [], []
 
-    match = BLOCK.search(answer) or LOOSE.search(answer)
-    if not match:
-        return answer, [], []
+    matches = _all_blocks(answer)
+    if not matches:
+        return _drop_empty_sections(answer), [], []
 
-    # The fence is noise to a reader whether or not its contents parse, so it
-    # goes either way.
-    cleaned = (answer[:match.start()] + answer[match.end():]).strip()
-    data = _load(match.group(1))
-    return cleaned, _parse_points(data), _parse_decisions(data)
+    # Strip from the end backwards so the earlier spans stay valid. The fence
+    # is noise to a reader whether or not its contents parse, so it goes
+    # either way.
+    cleaned = answer
+    for m in reversed(matches):
+        cleaned = cleaned[:m.start()] + cleaned[m.end():]
+
+    points: list[Point] = []
+    decisions: list[Decision] = []
+    for m in matches:
+        data = _load(m.group(1))
+        points.extend(_parse_points(data))
+        decisions.extend(_parse_decisions(data))
+
+    return _drop_empty_sections(cleaned), points[:6], decisions[:6]
 
 
 def _parse_decisions(data) -> list[Decision]:

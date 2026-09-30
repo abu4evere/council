@@ -352,6 +352,22 @@ REQUEST_TIMEOUT = 75.0
 # the better failure.
 SEAT_RETRY_BUDGET = float(os.environ.get("SEAT_RETRY_BUDGET", "150"))
 
+# How long a seat may produce NOTHING before a second provider is raced
+# against it. Measured: four seats finished in 33s while a fifth sat silent
+# for 153s inside its retry budget, and that one seat set the length of the
+# whole run. Silence is the signal -- a seat that is streaming is alive and is
+# never hedged, so this does not spend quota overtaking working models.
+# Generous enough that a model which is merely slow to start is not raced.
+HEDGE_AFTER = float(os.environ.get("HEDGE_AFTER", "18"))
+
+# The second, longer threshold: reasoning tokens are arriving but the seat has
+# still written no answer. Measured on a 564s Full run, synthesis spent 84
+# seconds reasoning before its first answer token and cost 243s in total --
+# the largest single item in the run. A model is not stuck here, just slow, so
+# this budget is generous enough that an ordinary thinker finishes first and
+# nothing is raced needlessly.
+HEDGE_CONTENT_AFTER = float(os.environ.get("HEDGE_CONTENT_AFTER", "55"))
+
 # Parallelism is now a property of each provider (see providers.py), because
 # their limits differ by an order of magnitude. Groq allows 1 concurrent seat;
 # Gemini allows 3. Override any provider here, e.g. MAX_PARALLEL=groq:2,gemini:4

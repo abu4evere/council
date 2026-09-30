@@ -27,6 +27,18 @@ from .llm import ModelError, NotConfigured, stream_completion
 Emit = Callable[[str, "str | None", dict], Awaitable[None]]
 
 
+class Mute:
+    """A silence switch a stream can read while it is already running.
+
+    A plain bool is captured at call time, and a hedge has to be able to mute
+    a stream that started twenty seconds earlier.
+    """
+    __slots__ = ("on",)
+
+    def __init__(self, on: bool = False) -> None:
+        self.on = on
+
+
 class Orchestrator:
     def __init__(self, emit: Emit, memory: str = "", challenge: str = "medium"):
         self.emit = emit
@@ -75,14 +87,32 @@ class Orchestrator:
     def _with_memory(self, prompt: str) -> str:
         return f"{self.memory}{prompt}" if self.memory else prompt
 
-    async def _stream(self, client, agent, system, user, max_tokens, temperature):
-        """Stream one seat's output, throttled per provider, emitting as it goes."""
+    async def _stream(self, client, agent, system, user, max_tokens, temperature,
+                      *, key=None, silent=False, on_first_token=None,
+                      on_any_output=None):
+        """Stream one seat's output, throttled per provider, emitting as it goes.
+
+        `silent` buffers without emitting, for a hedged attempt that has not won
+        yet -- two attempts streaming into one panel would interleave two
+        different answers. It may be a plain bool, or a Mute object, which lets
+        a stream ALREADY IN FLIGHT be silenced when a hedge starts.
+
+        Two liveness callbacks, because they mean different things:
+        `on_first_token` fires on the first answer token, `on_any_output` fires
+        on the first output of any kind including reasoning. A model emitting
+        reasoning is alive but has not answered, and those need telling apart.
+        """
         buf: list[str] = []
+        panel = key or agent.key
+        mute = silent if hasattr(silent, "on") else Mute(bool(silent))
 
         async def on_reasoning(text: str) -> None:
             # Kept separate from the answer. Useful to watch, never part of the
             # text that gets fed to the next seat in the debate.
-            await self.emit("agent_reasoning", agent.key, {"text": text})
+            if on_any_output is not None:
+                on_any_output()
+            if not mute.on:
+                await self.emit("agent_reasoning", panel, {"text": text})
 
         capped = config.tokens_for(agent.provider, max_tokens)
         async with self._gate(agent.provider):
@@ -91,9 +121,141 @@ class Orchestrator:
                 temperature=temperature, provider=agent.provider,
                 timeout=config.REQUEST_TIMEOUT, on_reasoning=on_reasoning,
             ):
+                if not buf and chunk:
+                    if on_first_token is not None:
+                        on_first_token()
+                    if on_any_output is not None:
+                        on_any_output()
                 buf.append(chunk)
-                await self.emit("agent_chunk", agent.key, {"text": chunk})
+                if not mute.on:
+                    await self.emit("agent_chunk", panel, {"text": chunk})
         return "".join(buf).strip()
+
+    async def _stall_reason(self, primary, got_any, got_content):
+        """Why this seat should be hedged, or None to leave it alone.
+
+        Returns as soon as the answer starts, so a seat that is writing is
+        never raced -- spending a second provider's quota to overtake a model
+        that is already delivering is pure waste.
+        """
+        loop = asyncio.get_running_loop()
+        t0 = loop.time()
+        any_w = asyncio.create_task(got_any.wait())
+        content_w = asyncio.create_task(got_content.wait())
+        try:
+            await asyncio.wait({primary, any_w, content_w},
+                               timeout=config.HEDGE_AFTER,
+                               return_when=asyncio.FIRST_COMPLETED)
+            if primary.done() or got_content.is_set():
+                return None
+            if not got_any.is_set():
+                return f"no output at all in {config.HEDGE_AFTER:.0f}s"
+
+            # Alive, but still thinking. Give it the longer budget.
+            remaining = config.HEDGE_CONTENT_AFTER - (loop.time() - t0)
+            if remaining > 0:
+                # Only the CONTENT waiter here. any_w has already finished --
+                # that is how we got to this branch -- and FIRST_COMPLETED on a
+                # set holding a finished task returns instantly, which would
+                # skip the wait entirely and hedge every reasoning model.
+                await asyncio.wait({primary, content_w}, timeout=remaining,
+                                   return_when=asyncio.FIRST_COMPLETED)
+            if primary.done() or got_content.is_set():
+                return None
+            return (f"reasoning but no answer after "
+                    f"{config.HEDGE_CONTENT_AFTER:.0f}s")
+        finally:
+            for t in (any_w, content_w):
+                if not t.done():
+                    t.cancel()
+
+    async def _hedged_stream(self, client, agent, system, user, max_tokens,
+                             temperature, *, panel=None):
+        """_stream, with a second provider raced in when the seat stalls.
+
+        Same contract as _stream -- returns text, raises on failure -- so every
+        fallback already wrapped around these call sites (synthesis dropping
+        back to the raw proposals, the critic's failover chain) keeps working
+        untouched.
+        """
+        key = panel or agent.key
+        mute = Mute(False)
+        got_any = asyncio.Event()
+        got_content = asyncio.Event()
+
+        async def attempt(seat, seat_mute):
+            try:
+                # _stream, NOT _hedged_stream: this is the attempt itself, and
+                # calling back into the hedge here would recurse forever.
+                text = await self._stream(
+                    client, seat, system, user, max_tokens, temperature,
+                    key=key, silent=seat_mute,
+                    on_first_token=got_content.set if seat is agent else None,
+                    on_any_output=got_any.set if seat is agent else None)
+                return seat, text, None
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                return seat, None, exc
+
+        primary = asyncio.create_task(attempt(agent, mute))
+
+        try:
+            reason = await self._stall_reason(primary, got_any, got_content)
+        except asyncio.CancelledError:
+            primary.cancel()
+            raise
+
+        backup_seat = None if reason is None else self._backup_seat(agent)
+        if backup_seat is None:
+            seat, text, exc = await primary
+            if exc is not None:
+                raise exc
+            return text
+
+        # The panel holds no answer text yet -- that is what triggered the
+        # hedge -- so muting the primary now keeps it clean for the winner.
+        mute.on = True
+        await self.emit("agent_hedge", key,
+                        {"label": agent.label, "provider": backup_seat.provider,
+                         "model": backup_seat.model, "reason": reason})
+        backup = asyncio.create_task(attempt(backup_seat, Mute(True)))
+
+        pending = {primary, backup}
+        winner = None
+        fallback = None
+        try:
+            while pending:
+                done, pending = await asyncio.wait(
+                    pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    seat, text, exc = task.result()
+                    if text:
+                        winner = (seat, text, exc)
+                        break
+                    if fallback is None:
+                        fallback = (seat, text, exc)
+                if winner:
+                    break
+        finally:
+            for t in (primary, backup):
+                if not t.done():
+                    t.cancel()
+
+        if winner is None:
+            seat, text, exc = fallback or (agent, None, ModelError("no answer"))
+            raise exc if exc is not None else ModelError(f"{agent.model}: empty response")
+
+        seat, text, _ = winner
+        # Both sides were muted from the hedge onward, so the winner's answer
+        # has never reached the panel. Put it there in one piece, and say which
+        # model actually produced it.
+        await self.emit("agent_start", key,
+                        {"label": agent.label, "model": seat.model,
+                         "provider": seat.provider, "color": agent.color,
+                         "role": "proposer", "hedged": seat is not agent})
+        await self.emit("agent_chunk", key, {"text": text})
+        return text
 
     async def _announce(self, agent, role, round_=None):
         payload = {"label": agent.label, "model": agent.model,
@@ -104,9 +266,12 @@ class Orchestrator:
 
     # -- Feature 1 ----------------------------------------------------------
 
-    async def _run_proposer(self, client, agent):
+    async def _run_proposer(self, client, agent, *, panel=None, silent=False,
+                            on_first_token=None, announce=True):
         """Never raises -- one dead seat must not take down the other three."""
-        await self._announce(agent, "proposer")
+        key = panel or agent.key
+        if announce:
+            await self._announce(agent, "proposer")
         try:
             # The language note goes FIRST: the same text at the end was
             # observed being ignored entirely.
@@ -115,11 +280,61 @@ class Orchestrator:
             text = await self._stream(
                 client, agent, system, self._with_memory(self.question),
                 config.MAX_TOKENS_PROPOSER, 0.85,
+                key=key, silent=silent, on_first_token=on_first_token,
             )
+            if not text:
+                raise ModelError(f"{agent.model}: empty response")
+            if not silent:
+                await self.emit("agent_done", key, {"text": text})
+            return agent, text, None
+        except asyncio.CancelledError:
+            raise
+        except ModelError as exc:
+            if not silent:
+                await self.emit("agent_error", key, {"error": str(exc)})
+            return agent, None, str(exc)
+        except Exception as exc:
+            if not silent:
+                await self.emit("agent_error", key, {"error": repr(exc)})
+            return agent, None, repr(exc)
+
+    def _backup_seat(self, agent):
+        """An equivalent seat for the same role on a DIFFERENT provider.
+
+        The straggler is nearly always stuck behind one provider's rate limit,
+        so a backup on the same provider would queue behind the same wall.
+        """
+        # Deliberately laxer than the primary resolution: it avoids only THIS
+        # seat's provider, not every provider used so far. By the time the
+        # synthesis seat stalls, all five proposer providers are already spent,
+        # and a strict rule would leave nowhere to hedge to. A slightly less
+        # diverse answer beats a seat that stalls for four minutes.
+        alt = config.resolve_seat(
+            agent,
+            avoid={agent.model},
+            avoid_providers={agent.provider},
+        )
+        if alt is None or alt.provider == agent.provider:
+            return None
+        return alt
+
+    async def _run_proposer_hedged(self, client, agent):
+        """A proposer seat, hedged. Returns (agent, text, error); never raises."""
+        await self._announce(agent, "proposer")
+        try:
+            # The language note goes FIRST: the same text at the end was
+            # observed being ignored entirely.
+            system = (self._internal_note()
+                      + prompts.proposer_system(agent.label, agent.framing, self.challenge))
+            text = await self._hedged_stream(
+                client, agent, system, self._with_memory(self.question),
+                config.MAX_TOKENS_PROPOSER, 0.85)
             if not text:
                 raise ModelError(f"{agent.model}: empty response")
             await self.emit("agent_done", agent.key, {"text": text})
             return agent, text, None
+        except asyncio.CancelledError:
+            raise
         except ModelError as exc:
             await self.emit("agent_error", agent.key, {"error": str(exc)})
             return agent, None, str(exc)
@@ -142,7 +357,7 @@ class Orchestrator:
                         {"stage": "proposing",
                          "label": f"{len(seats)} model{'s' if len(seats) > 1 else ''} thinking in parallel"})
 
-        results = await asyncio.gather(*(self._run_proposer(client, a) for a in seats))
+        results = await asyncio.gather(*(self._run_proposer_hedged(client, a) for a in seats))
         good = [(a, t) for a, t, e in results if t]
 
         if not good:
@@ -175,7 +390,7 @@ class Orchestrator:
 
         user = f"ORIGINAL QUESTION:\n{question}\n\n---\n\nADVISOR ANSWERS:\n\n{blocks}"
         try:
-            text = await self._stream(client, agg,
+            text = await self._hedged_stream(client, agg,
                                       prompts.with_rules(prompts.SYNTHESIS, self.challenge)
                                       + self._reply_note(),
                                       self._with_memory(user),
@@ -223,7 +438,7 @@ class Orchestrator:
                                           f"retrying with {seat.model}"})
             await self._announce(seat, "critic", rnd)
             try:
-                text = await self._stream(
+                text = await self._hedged_stream(
                     client, seat,
                     self._internal_note()
                     + prompts.with_rules(prompts.DEBATE_CRITIC, self.challenge),
@@ -272,7 +487,7 @@ class Orchestrator:
             await self.emit("stage", None,
                             {"stage": "drafting", "label": "drafting the initial plan"})
             await self._announce(drafter, "drafter", 0)
-            plan = await self._stream(client, drafter, self._internal_note() + prompts.with_rules(prompts.DEBATE_DRAFTER, self.challenge),
+            plan = await self._hedged_stream(client, drafter, self._internal_note() + prompts.with_rules(prompts.DEBATE_DRAFTER, self.challenge),
                                       self._with_memory(question),
                                       config.MAX_TOKENS_PROPOSER, 0.7)
             await self.emit("agent_done", drafter.key, {"text": plan})
@@ -316,7 +531,7 @@ class Orchestrator:
                             f"THE CRITIC ATTACKED IT (round {rnd}):\n{critique}\n\n"
                             "Revise where the Critic is right. Push back where they are wrong.")
                 try:
-                    plan = await self._stream(client, drafter, self._internal_note() + prompts.with_rules(prompts.DEBATE_DRAFTER, self.challenge),
+                    plan = await self._hedged_stream(client, drafter, self._internal_note() + prompts.with_rules(prompts.DEBATE_DRAFTER, self.challenge),
                                               rev_user, config.MAX_TOKENS_PROPOSER, 0.7)
                 except ModelError as exc:
                     await self.emit("agent_error", drafter.key, {"error": str(exc)})
@@ -331,7 +546,7 @@ class Orchestrator:
         await self._announce(judge, "judge")
         judge_user = self._judge_input(question, plan, critiques)
         try:
-            verdict = await self._stream(client, judge, prompts.with_rules(prompts.DEBATE_JUDGE, self.challenge) + self._reply_note(),
+            verdict = await self._hedged_stream(client, judge, prompts.with_rules(prompts.DEBATE_JUDGE, self.challenge) + self._reply_note(),
                                          self._with_memory(judge_user),
                                          config.MAX_TOKENS_JUDGE, 0.4)
             if not verdict:

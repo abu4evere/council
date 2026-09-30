@@ -1,19 +1,81 @@
 :root {
-  --bg: #141413;
-  --bg-raised: #1c1c1a;
-  --bg-input: #232321;
-  --border: #302f2c;
-  --border-soft: #262523;
-  --text: #f0eee6;
-  --text-dim: #a5a29a;
-  --text-faint: #6e6b63;
-  --accent: #c96442;
-  --accent-dim: #8a4630;
-  --ok: #3fa87a;
-  --warn: #d4a02c;
-  --err: #d4553f;
+  --bg: #0C0C0D;
+  --bg-raised: #141416;
+  --bg-input: #18181B;
+  --sidebar: #0F0F11;
+  --surface: #161618;
+  --surface-2: #1C1C20;
+  --surface-3: #232329;
+  --border: #242429;
+  --border-soft: #1C1C20;
+  --text: #EDEDEE;
+  --text-dim: #9B9BA5;
+  --text-faint: #8A8A95;
+  --placeholder: #5E5E68;
+  --accent: #EDEDEE;
+  --accent-dim: #8A8A95;
+  --btn-bg: #FFFFFF;
+  --btn-fg: #0C0C0D;
+  --btn-bg-hover: #D8D8DC;
+  --hairline: #35353D;
+  --scrim: rgba(0, 0, 0, .55);
+  --ring: rgba(237, 237, 238, .07);
+  --shadow: 0 8px 26px rgba(0, 0, 0, .45);
+  --shadow-lg: 0 30px 80px -50px rgba(0, 0, 0, .9);
+  --err-wash: rgba(255, 92, 92, .08);
+  --warn-edge: #3A3124;
+  --warn-wash: #201C16;
+  --ok-edge: #27503F;
+
+  --ok: #5BD6A0;
+  --warn: #E8C55A;
+  --err: #FF5C5C;
+  --agree: #5BD6A0;
+  --neutral: #E8C55A;
+  --dissent: #FF5C5C;
+
+  --font-sans: "Instrument Sans", ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-serif: "Instrument Serif", Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --radius: 14px;
   --sidebar-w: 260px;
+}
+
+:root[data-theme="light"] {
+  --bg: #EFEEE8;
+  --bg-raised: #F8F7F3;
+  --bg-input: #FFFFFF;
+  --sidebar: #E9E7DF;
+  --surface: #FFFFFF;
+  --surface-2: #F4F2EC;
+  --surface-3: #E7E4DA;
+  --border: #DBD8CE;
+  --border-soft: #E5E2D9;
+  --text: #17171B;
+  --text-dim: #4E4D55;
+  --text-faint: #63616A;
+  --placeholder: #8B8992;
+  --accent: #17171B;
+  --accent-dim: #63616A;
+  --btn-bg: #17171B;
+  --btn-fg: #EFEEE8;
+  --btn-bg-hover: #37363D;
+  --hairline: #C9C6BB;
+  --scrim: rgba(23, 23, 27, .38);
+  --ring: rgba(23, 23, 27, .10);
+  --shadow: 0 8px 26px rgba(23, 23, 27, .16);
+  --shadow-lg: 0 30px 70px -48px rgba(23, 23, 27, .45);
+  --err-wash: rgba(176, 51, 37, .08);
+  --warn-edge: #D8C9A0;
+  --warn-wash: #F7F0DF;
+  --ok-edge: #A8D3C0;
+
+  --ok: #076B48;
+  --warn: #7E6210;
+  --err: #B03325;
+  --agree: #076B48;
+  --neutral: #7E6210;
+  --dissent: #B03325;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -49,7 +111,7 @@ html, body {
   from { opacity: 0; transform: translateY(8px) scale(.99); }
   to   { opacity: 1; transform: none; }
 }
-.auth-brand { font-size: 26px; line-height: 1; margin-bottom: 14px; }
+.auth-brand { line-height: 0; margin-bottom: 14px; }
 .login-card h1 { font-size: 21px; font-weight: 600; letter-spacing: -.01em; }
 .login-card p { color: var(--text-dim); font-size: 13px; margin-top: 5px; }
 
@@ -82,18 +144,21 @@ html, body {
 }
 .field input:focus {
   outline: none; border-color: var(--accent-dim);
-  box-shadow: 0 0 0 3px rgba(201,100,66,.13);
+  box-shadow: 0 0 0 3px var(--ring);
 }
-.field input::placeholder { color: #55534e; }
+.field input::placeholder { color: var(--placeholder); }
 
-#auth-submit {
+#auth-submit,
+.signup-step > button[type="submit"] {
   width: 100%; font: inherit; font-size: 14px; font-weight: 600;
   padding: 11px; margin-top: 6px; cursor: pointer;
-  background: var(--accent); color: #fff; border: none; border-radius: 10px;
+  background: var(--btn-bg); color: var(--btn-fg); border: none; border-radius: 10px;
   transition: background .16s ease, opacity .16s ease;
 }
-#auth-submit:hover:not(:disabled) { background: #d4714f; }
-#auth-submit:disabled { opacity: .6; cursor: default; }
+#auth-submit:hover:not(:disabled),
+.signup-step > button[type="submit"]:hover:not(:disabled) { background: var(--btn-bg-hover); }
+#auth-submit:disabled,
+.signup-step > button[type="submit"]:disabled { opacity: .6; cursor: default; }
 
 .auth-hint { color: var(--text-faint); font-size: 11.5px; min-height: 16px; margin-bottom: 4px; }
 .login-error { color: var(--err); font-size: 12.5px; min-height: 18px; margin-top: 10px; }
@@ -114,14 +179,22 @@ html, body {
 .app { display: flex; height: 100dvh; overflow: hidden; }
 
 .sidebar {
-  width: var(--sidebar-w); flex-shrink: 0; background: #111110;
+  width: var(--sidebar-w); flex-shrink: 0; background: var(--sidebar);
   border-right: 1px solid var(--border-soft); display: flex; flex-direction: column;
 }
 .sidebar-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 14px 10px; border-bottom: 1px solid var(--border-soft);
 }
-.brand { font-weight: 600; font-size: 14px; letter-spacing: .01em; }
+.brand {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 600; font-size: 14px; letter-spacing: .01em;
+  color: var(--text); text-decoration: none;
+  transition: opacity .16s ease;
+}
+.brand:hover { opacity: .72; }
+.brand-mark { width: 19px; height: 19px; flex: none; color: var(--accent); }
+.auth-mark { width: 30px; height: 30px; color: var(--accent); }
 .btn-new {
   width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border);
   background: var(--bg-input); color: var(--text-dim); font-size: 17px; line-height: 1;
@@ -151,7 +224,7 @@ html, body {
 .btn-ghost:hover { color: var(--text); border-color: var(--accent-dim); }
 
 .scrim {
-  display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 40;
+  display: none; position: fixed; inset: 0; background: var(--scrim); z-index: 40;
 }
 
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -208,7 +281,7 @@ html, body {
   display: flex; align-items: center; gap: 8px; padding: 9px 13px; cursor: pointer;
   font-size: 12.5px; user-select: none;
 }
-.agent-head:hover { background: #201f1d; }
+.agent-head:hover { background: var(--surface-2); }
 .swatch { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .agent-name { font-weight: 600; }
 .agent-model { color: var(--text-faint); font-size: 11px; }
@@ -232,7 +305,7 @@ html, body {
 /* final answer */
 .final {
   border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 4px 18px 18px; background: #191917;
+  padding: 4px 18px 18px; background: var(--surface);
 }
 .final-head {
   display: flex; align-items: center; gap: 8px; padding: 13px 0 4px;
@@ -248,7 +321,7 @@ html, body {
 
 .failed {
   border: 1px solid var(--err); border-radius: var(--radius); padding: 13px 16px;
-  color: var(--err); font-size: 13.5px; background: rgba(212,85,63,.07);
+  color: var(--err); font-size: 13.5px; background: var(--err-wash);
 }
 
 /* markdown */
@@ -258,11 +331,11 @@ html, body {
 .md ul, .md ol { margin: 9px 0 9px 21px; }
 .md li { margin: 3px 0; }
 .md code {
-  background: #2a2926; padding: 1.5px 5px; border-radius: 5px;
+  background: var(--surface-3); padding: 1.5px 5px; border-radius: 5px;
   font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: .89em;
 }
 .md pre {
-  background: #0e0e0d; border: 1px solid var(--border-soft); padding: 12px;
+  background: var(--bg); border: 1px solid var(--border-soft); padding: 12px;
   border-radius: 9px; overflow-x: auto; margin: 11px 0;
 }
 .md pre code { background: none; padding: 0; font-size: 12.5px; line-height: 1.55; }
@@ -301,7 +374,7 @@ html, body {
   font: inherit; font-size: 11.5px; padding: 3px 10px; border-radius: 20px; cursor: pointer;
 }
 .mode:hover { color: var(--text-dim); }
-.mode.active { color: var(--text); background: #32312e; border-color: var(--border); }
+.mode.active { color: var(--text); background: var(--surface-3); border-color: var(--border); }
 
 .input-row { display: flex; align-items: flex-end; gap: 9px; }
 #prompt {
@@ -312,16 +385,16 @@ html, body {
 #prompt::placeholder { color: var(--text-faint); }
 .send {
   width: 31px; height: 31px; border-radius: 50%; border: none; background: var(--accent);
-  color: #fff; font-size: 15px; cursor: pointer; flex-shrink: 0; line-height: 1;
+  color: var(--btn-fg); font-size: 15px; cursor: pointer; flex-shrink: 0; line-height: 1;
 }
-.send:disabled { background: #3a3937; color: var(--text-faint); cursor: not-allowed; }
+.send:disabled { background: var(--surface-3); color: var(--text-faint); cursor: not-allowed; }
 
 /* ---------- toast ---------- */
 .toast {
   position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
   background: var(--bg-raised); border: 1px solid var(--border); color: var(--text);
   padding: 10px 17px; border-radius: 10px; font-size: 13px; z-index: 200;
-  max-width: 90vw; box-shadow: 0 8px 26px rgba(0,0,0,.45);
+  max-width: 90vw; box-shadow: var(--shadow);
 }
 
 /* ---------- mobile ---------- */
@@ -389,7 +462,7 @@ html, body {
 .vault-note {
   border: 1px solid var(--border-soft); border-left: 2px solid var(--accent-dim);
   border-radius: 9px; padding: 9px 13px; margin-bottom: 12px;
-  background: #191917;
+  background: var(--surface);
 }
 .vault-head {
   font-size: 11px; color: var(--text-dim); text-transform: uppercase;
@@ -403,7 +476,7 @@ html, body {
 /* ---------- modal ---------- */
 .modal {
   position: fixed; inset: 0; z-index: 90;
-  background: rgba(0,0,0,.6); backdrop-filter: blur(3px);
+  background: var(--scrim); backdrop-filter: blur(3px);
   display: grid; place-items: center; padding: 20px;
   animation: fade-in .18s ease;
 }
@@ -426,12 +499,12 @@ html, body {
 /* ---------- API keys ---------- */
 .keys-list { display: flex; flex-direction: column; gap: 10px; }
 .key-mode {
-  font-size: 12px; color: var(--warn); border: 1px solid #3a3124;
-  background: #201c16; border-radius: 9px; padding: 8px 11px; margin-bottom: 4px;
+  font-size: 12px; color: var(--warn); border: 1px solid var(--warn-edge);
+  background: var(--warn-wash); border-radius: 9px; padding: 8px 11px; margin-bottom: 4px;
 }
 .key-row {
   border: 1px solid var(--border-soft); border-radius: 11px;
-  padding: 12px 13px; background: #191917;
+  padding: 12px 13px; background: var(--surface);
 }
 .key-head { display: flex; align-items: center; gap: 8px; }
 .key-label { font-size: 13.5px; font-weight: 600; }
@@ -439,8 +512,8 @@ html, body {
   font-size: 10.5px; padding: 2px 8px; border-radius: 20px;
   border: 1px solid var(--border); font-variant-numeric: tabular-nums;
 }
-.key-badge.yours { color: var(--ok); border-color: #27503f; }
-.key-badge.shared { color: var(--warn); border-color: #3e3520; }
+.key-badge.yours { color: var(--ok); border-color: var(--ok-edge); }
+.key-badge.shared { color: var(--warn); border-color: var(--warn-edge); }
 .key-badge.none { color: var(--text-faint); }
 .key-note { font-size: 11.5px; color: var(--text-faint); margin: 5px 0 9px; line-height: 1.5; }
 .key-form { display: flex; gap: 6px; }
@@ -455,7 +528,7 @@ html, body {
   cursor: pointer; border: 1px solid var(--border); background: none;
   color: var(--text-dim); white-space: nowrap;
 }
-.key-save { background: var(--accent); border-color: var(--accent); color: #fff; }
+.key-save { background: var(--btn-bg); border-color: var(--btn-bg); color: var(--btn-fg); }
 .key-save:disabled { opacity: .6; cursor: default; }
 .key-del:hover { color: var(--err); border-color: var(--err); }
 .key-link {
@@ -476,7 +549,7 @@ html, body {
    a single model, so it gets the accent treatment and the answer does not. */
 .disagree {
   border: 1px solid var(--border); border-left: 2px solid var(--accent);
-  border-radius: var(--radius); background: #191917;
+  border-radius: var(--radius); background: var(--surface);
   padding: 4px 18px 16px; margin-bottom: 14px;
 }
 .disagree-head {
@@ -520,7 +593,7 @@ html, body {
   display: flex; align-items: center; gap: 12px;
   padding: 8px 14px; margin-bottom: 12px;
   border: 1px solid var(--border-soft); border-radius: 9px;
-  background: #191917; font-size: 12px;
+  background: var(--surface); font-size: 12px;
 }
 .run-summary-text { color: var(--text-dim); }
 .run-toggle {
@@ -539,7 +612,7 @@ html, body {
   font: inherit; font-size: 11px; padding: 3px 9px; border-radius: 20px; cursor: pointer;
 }
 .chal:hover { color: var(--text-dim); }
-.chal.active { color: var(--text); background: #32312e; border-color: var(--border); }
+.chal.active { color: var(--text); background: var(--surface-3); border-color: var(--border); }
 @media (max-width: 560px) { .challenge { margin-left: 0; } }
 
 /* ---------- decide these ----------
@@ -548,7 +621,7 @@ html, body {
    depends on them. */
 .decisions {
   border: 1px solid var(--border); border-radius: var(--radius);
-  background: #1a1815; padding: 4px 18px 16px; margin-top: 14px;
+  background: var(--surface-2); padding: 4px 18px 16px; margin-top: 14px;
 }
 .decisions-head {
   font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
@@ -570,17 +643,204 @@ html, body {
    is hit. */
 .guest-banner {
   display: flex; align-items: center; gap: 12px;
-  padding: 9px 16px; background: #1f1a17;
-  border-bottom: 1px solid #3a2a20; font-size: 12.5px; color: var(--text-dim);
+  padding: 9px 16px; background: var(--surface-2);
+  border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--text-dim);
 }
 .guest-signup {
-  margin-left: auto; background: var(--accent); color: #fff; border: none;
+  margin-left: auto; background: var(--btn-bg); color: var(--btn-fg); border: none;
   border-radius: 8px; font: inherit; font-size: 12px; font-weight: 600;
   padding: 5px 13px; cursor: pointer;
 }
-.guest-signup:hover { background: #d4714f; }
+.guest-signup:hover { background: var(--btn-bg-hover); }
 .guest-wall {
   border: 1px solid var(--accent-dim); border-radius: var(--radius);
-  background: #1f1a17; padding: 15px 18px; font-size: 14px;
+  background: var(--surface-2); padding: 15px 18px; font-size: 14px;
   color: var(--text-dim); line-height: 1.6; margin-bottom: 10px;
+}
+
+/* --- multi-step signup --------------------------------------------------- */
+.steps {
+  display: flex; gap: 6px; list-style: none; padding: 0;
+  margin: 0 0 18px; font-size: 11px;
+}
+.step {
+  flex: 1; display: flex; align-items: center; gap: 6px;
+  color: var(--text-faint); transition: color .25s ease;
+}
+.step b {
+  width: 18px; height: 18px; border-radius: 50%; flex: none;
+  display: grid; place-items: center; font-size: 10px; font-weight: 600;
+  background: var(--bg-input); border: 1px solid var(--border);
+  transition: background .25s ease, border-color .25s ease, color .25s ease;
+}
+.step.is-active { color: var(--text); }
+.step.is-active b { background: var(--btn-bg); border-color: var(--btn-bg); color: var(--btn-fg); }
+.step.is-done { color: var(--text-dim); }
+.step.is-done b { background: transparent; border-color: var(--accent); color: var(--accent); }
+.step.is-done b::after { content: "\2713"; }
+.step.is-done b { font-size: 0; }
+.step.is-done b::after { font-size: 10px; }
+
+.signup-step { animation: step-in .28s ease both; }
+@keyframes step-in {
+  from { opacity: 0; transform: translateX(10px); }
+  to   { opacity: 1; transform: none; }
+}
+.field span i {
+  font-style: normal; color: var(--text-faint); text-transform: none;
+  letter-spacing: 0; font-weight: 400;
+}
+.field input.code-input {
+  font-size: 22px; letter-spacing: .5em; text-align: center;
+  font-variant-numeric: tabular-nums; padding-left: .5em !important;
+}
+.step-links {
+  display: flex; justify-content: space-between; gap: 10px; margin-top: 12px;
+}
+.linkish {
+  background: none; border: 0; padding: 0; width: auto;
+  color: var(--text-faint); font-size: 12px; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.linkish:hover:not(:disabled) { color: var(--text-dim); }
+.linkish:disabled { cursor: default; opacity: .55; text-decoration: none; }
+
+
+/* ======================================================================
+   Monochrome system. Colour appears ONLY as model stance.
+   ====================================================================== */
+
+body { font-family: var(--font-sans); }
+code, pre, kbd, samp, .mono { font-family: var(--font-mono); }
+
+/* Primary action: the brightest thing on the page, not a coloured thing. */
+.btn.solid, #auth-submit, .signup-step > button[type="submit"] {
+  background: var(--btn-bg); color: var(--btn-fg); border: 1px solid var(--btn-bg);
+  font-weight: 600; box-shadow: none;
+}
+.btn.solid:hover, #auth-submit:hover:not(:disabled),
+.signup-step > button[type="submit"]:hover:not(:disabled) {
+  background: var(--btn-bg-hover); border-color: var(--btn-bg-hover); transform: none;
+}
+
+/* Letterspaced mono for the small labels. Doing the work a colour would
+   otherwise do: telling you this text is a different kind of thing. */
+.eyebrow, .kicker, .verdict-label, .term-bar span, .chip-state, .rail-label {
+  font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--text-dim); background: none; -webkit-text-fill-color: currentColor;
+}
+
+/* ---- the alignment rail: stance, not decoration ---- */
+.chip {
+  border: 1px solid var(--border); background: var(--bg-raised);
+  border-radius: 8px; padding: 9px 11px;
+  display: flex; align-items: center; gap: 8px; justify-content: flex-start;
+  transition: border-color .22s ease, background .22s ease, opacity .22s ease;
+}
+.chip b {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 500;
+  color: var(--text); letter-spacing: .01em;
+}
+.chip .chip-state { margin-left: auto; font-size: 10px; letter-spacing: .1em; }
+
+/* The stance glyph is the only coloured mark on the page. */
+.chip::before {
+  content: "\00B7"; width: 15px; text-align: center; flex: none;
+  font-family: var(--font-mono); font-size: 14px; font-weight: 600;
+  color: var(--text-faint); transition: color .22s ease;
+}
+.chip.active { border-color: var(--hairline); }
+.chip.active::before { content: "\2026"; color: var(--text-dim); }
+.chip.agree::before   { content: "\2713"; color: var(--agree); }
+.chip.neutral::before { content: "\2248"; color: var(--neutral); }
+.chip.dissent::before { content: "\2717"; color: var(--dissent); }
+.chip.agree   { border-color: var(--agree-edge, rgba(91,214,160,.30)); }
+.chip.neutral { border-color: rgba(232,197,90,.30); }
+.chip.dissent { border-color: rgba(255,92,92,.34); }
+
+/* ---- motion: three transitions, and that is all ---- */
+@media (prefers-reduced-motion: reduce) {
+  .chip { transition: none; }
+}
+
+.brand-mark { width: 20px; height: 20px; flex: none; color: var(--text); }
+.auth-mark { width: 32px; height: 32px; color: var(--text); }
+.brand:hover .brand-mark { transform: rotate(-14deg); }
+.brand-mark { transition: transform .35s cubic-bezier(.16,1,.3,1); }
+.step.is-active b { background: var(--btn-bg); border-color: var(--btn-bg); color: var(--btn-fg); }
+.step.is-done b { border-color: var(--text-dim); color: var(--text-dim); }
+.field input:focus { border-color: var(--text-dim); box-shadow: 0 0 0 3px var(--ring); }
+.login-card { box-shadow: var(--shadow-lg); }
+
+/* ---- phone ---------------------------------------------------------------
+   Sizes here are floors, not preferences: 16px is what stops iOS zooming on
+   focus, and 44px is the published minimum tap target. */
+@media (max-width: 560px) {
+  /* Specific enough to beat `.field input`; a bare `input` here does nothing. */
+  .field input, .login-card input, input, textarea, select { font-size: 16px; }
+  #prompt, #vault-path { font-size: 16px; }
+  .field input.code-input { font-size: 24px; }
+
+  .mode, .chal {
+    min-height: 40px; padding-inline: 13px;
+    display: inline-flex; align-items: center;
+  }
+  .send { width: 44px; height: 44px; font-size: 18px; }
+  .icon-btn { min-width: 44px; min-height: 44px; }
+  .btn-new { width: 38px; height: 38px; }
+  .guest-signup { min-height: 40px; padding-inline: 14px; }
+
+  /* The composer is the one thing that must never be cramped. */
+  .composer { padding: 10px 12px 12px; }
+  .composer-controls { gap: 8px; flex-wrap: wrap; }
+
+  .login-card { padding: 26px 22px; }
+  .signup-step > button[type="submit"], #auth-submit { min-height: 48px; }
+  .step-links { gap: 14px; }
+  .linkish { min-height: 34px; }
+}
+
+
+/* ---- theme switch -------------------------------------------------------
+   The colour transitions that make individual controls feel responsive are
+   exactly what makes a THEME change feel broken: forty elements each easing
+   their own background over 200ms reads as lag, not polish. During a switch
+   they are all turned off, and the circular wipe carries the change instead. */
+:root[data-switching] *,
+:root[data-switching] *::before,
+:root[data-switching] *::after {
+  transition: none !important;
+}
+
+.theme-btn {
+  display: grid; place-items: center;
+  width: 34px; height: 34px; flex: none;
+  background: none; border: 1px solid var(--border); border-radius: 9px;
+  color: var(--text-dim); cursor: pointer;
+  transition: color .2s ease, border-color .2s ease;
+}
+.theme-btn:hover { color: var(--text); border-color: var(--hairline); }
+.theme-btn svg { width: 15px; height: 15px; }
+.t-moon { display: none; }
+.t-sun { display: block; }
+:root[data-theme="light"] .t-sun { display: none; }
+:root[data-theme="light"] .t-moon { display: block; }
+
+@media (max-width: 560px) { .theme-btn { width: 44px; height: 44px; } }
+
+
+/* ---- the theme wipe -----------------------------------------------------
+   The browser's default for a view transition is a cross-fade between the two
+   snapshots. That fights the circle, so both layers are held still and the
+   new one is simply revealed through the expanding clip-path. */
+::view-transition-old(root),
+::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-old(root) { z-index: 1; }
+::view-transition-new(root) { z-index: 2; }
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) { animation: none !important; }
 }

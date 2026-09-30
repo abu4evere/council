@@ -11,12 +11,17 @@ seq it saw and we replay from there instead of losing the run.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
 import uuid
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "council.db"
+# Next to the code for a local install; on a mounted volume in a container.
+# The app directory is part of the image and is REPLACED on every deploy, so
+# a database living there would take every account with it each time.
+DB_PATH = Path(os.environ.get("COUNCIL_DB")
+                or Path(__file__).parent / "council.db")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -33,6 +38,16 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+CREATE TABLE IF NOT EXISTS verifications (
+    email       TEXT PRIMARY KEY,
+    code_hash   TEXT NOT NULL,
+    created_at  REAL NOT NULL,
+    attempts    INTEGER NOT NULL DEFAULT 0,
+    sends       INTEGER NOT NULL DEFAULT 1,
+    last_sent   REAL NOT NULL,
+    window_start REAL NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS user_usage (
     user_id        TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -112,6 +127,15 @@ def init() -> None:
         ucols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
         if "vault_path" not in ucols:
             conn.execute("ALTER TABLE users ADD COLUMN vault_path TEXT")
+        # Profile fields, added without rebuilding the table so existing
+        # accounts survive. Nullable: the one account that predates email
+        # verification has neither, and locking its owner out of their own
+        # instance would be an absurd way to enforce a signup rule.
+        for col in ("email", "full_name", "purpose"):
+            if col not in ucols:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email "
+                     "ON users(email) WHERE email IS NOT NULL")
         conn.commit()
     finally:
         conn.close()
@@ -182,6 +206,89 @@ def user_count() -> int:
     finally:
         conn.close()
 
+
+
+
+# --- email verification ----------------------------------------------------
+
+def get_verification(email: str) -> dict | None:
+    conn = connect()
+    try:
+        row = conn.execute("SELECT * FROM verifications WHERE email = ?", (email,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def put_verification(email: str, code_hash: str, window_start: float, sends: int) -> None:
+    conn = connect()
+    try:
+        conn.execute(
+            """INSERT INTO verifications (email, code_hash, created_at, attempts,
+                                          sends, last_sent, window_start)
+               VALUES (?,?,?,0,?,?,?)
+               ON CONFLICT(email) DO UPDATE SET
+                   code_hash = excluded.code_hash,
+                   created_at = excluded.created_at,
+                   attempts = 0,
+                   sends = excluded.sends,
+                   last_sent = excluded.last_sent,
+                   window_start = excluded.window_start""",
+            (email, code_hash, _now(), sends, _now(), window_start))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def count_verification_attempt(email: str) -> int:
+    """Increment and return the attempt count for this code."""
+    conn = connect()
+    try:
+        conn.execute("UPDATE verifications SET attempts = attempts + 1 WHERE email = ?", (email,))
+        conn.commit()
+        row = conn.execute("SELECT attempts FROM verifications WHERE email = ?", (email,)).fetchone()
+        return row["attempts"] if row else 0
+    finally:
+        conn.close()
+
+
+def clear_verification(email: str) -> None:
+    conn = connect()
+    try:
+        conn.execute("DELETE FROM verifications WHERE email = ?", (email,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_user_by_email(email: str) -> dict | None:
+    conn = connect()
+    try:
+        row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def create_verified_user(email: str, full_name: str, purpose: str,
+                         password_hash: str) -> str | None:
+    """Create an account whose email has already been proven. None if taken."""
+    uid = _id()
+    conn = connect()
+    try:
+        conn.execute(
+            """INSERT INTO users (id, username, password_hash, created_at,
+                                  email, full_name, purpose)
+               VALUES (?,?,?,?,?,?,?)""",
+            (uid, email, password_hash, _now(), email, full_name, purpose or None))
+        if conn.execute("SELECT COUNT(*) c FROM users").fetchone()["c"] == 1:
+            conn.execute("UPDATE conversations SET user_id = ? WHERE user_id IS NULL", (uid,))
+        conn.commit()
+        return uid
+    except sqlite3.IntegrityError:
+        return None
+    finally:
+        conn.close()
 
 
 # --- usage and credit ------------------------------------------------------

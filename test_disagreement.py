@@ -120,6 +120,69 @@ def main() -> int:
     _, _, none = extract('```json council-disagreements\n{"disagreements":[]}\n```')
     check("no decisions key is safe", none == [])
 
+    # --- two blocks in one answer -----------------------------------------
+    # This is what actually happened in production: the model split the
+    # material across two fences. extract() read only the first, so the
+    # decisions were never parsed AND their JSON was left sitting in the
+    # prose. The decisions panel fired zero times in twenty runs because of it.
+    two = (
+        "Here is the answer.\n\n"
+        "### DISAGREEMENTS\n\n"
+        '```json council-disagreements\n'
+        '{"disagreements":[{"point":"Ship now or wait",'
+        '"sides":[{"seat":"Pragmatist","says":"Ship"},{"seat":"Skeptic","says":"Wait"}],'
+        '"resolution":"Ship; waiting costs more"}]}\n'
+        "```\n\n"
+        "### OPEN QUESTIONS\n\n"
+        '```json council-disagreements\n'
+        '{"decisions":[{"question":"Do you need offline?","why":"Decides the backend"},'
+        '{"question":"Who pays?","why":"Decides pricing"}]}\n'
+        "```\n")
+    cleaned, pts, decs = extract(two)
+    check("two blocks: disagreement from the first is kept", len(pts) == 1)
+    check("two blocks: decisions from the SECOND are parsed", len(decs) == 2,
+          f"got {len(decs)}")
+    check("two blocks: no JSON left in the prose", "```json" not in cleaned)
+    check("two blocks: prose survives", "Here is the answer." in cleaned)
+
+    # An unlabelled block holding only decisions. The old fallback pattern
+    # required the word "disagreements", so this was silently dropped.
+    unlabelled = ('Answer text.\n\n```json\n'
+                  '{"decisions":[{"question":"Which host?","why":"Cost"}]}\n```')
+    cleaned, _, decs = extract(unlabelled)
+    check("unlabelled decisions-only block is recovered", len(decs) == 1,
+          f"got {len(decs)}")
+    check("unlabelled block is stripped", "```json" not in cleaned)
+
+    # --- empty prose headings ----------------------------------------------
+    # The model moves the content into the data block and leaves the heading
+    # bare. A lone word "DISAGREEMENTS" sitting over white space reads as a
+    # broken feature rather than as "they agreed", so it comes out.
+    bare = ("Recommendation here.\n\n"
+            "### DISAGREEMENTS\n\n---\n\n"
+            "### OPEN QUESTIONS\n\n"
+            "- Something real\n")
+    cleaned, _, _ = extract(bare)
+    check("an empty DISAGREEMENTS heading is removed",
+          "DISAGREEMENTS" not in cleaned, repr(cleaned))
+    check("a heading WITH content is kept",
+          "OPEN QUESTIONS" in cleaned and "Something real" in cleaned, repr(cleaned))
+
+    bold = "Answer.\n\n**DISAGREEMENTS**\n\n**OPEN QUESTIONS**\n\n- Real item\n"
+    cleaned, _, _ = extract(bold)
+    check("bold-style empty heading is removed too",
+          "DISAGREEMENTS" not in cleaned and "Real item" in cleaned, repr(cleaned))
+
+    kept = "Answer.\n\n### DISAGREEMENTS\n\nThey split on pricing.\n"
+    cleaned, _, _ = extract(kept)
+    check("a DISAGREEMENTS section with prose is left alone",
+          "They split on pricing." in cleaned and "DISAGREEMENTS" in cleaned)
+
+    # A heading the model invented must not be eaten by the same rule.
+    invented = "Answer.\n\n### RANDOM SECTION\n\n### OPEN QUESTIONS\n\n- x\n"
+    cleaned, _, _ = extract(invented)
+    check("an unrelated empty heading is left alone", "RANDOM SECTION" in cleaned)
+
     passed, total = sum(results), len(results)
     print(f"\n{passed}/{total} checks passed")
     return 0 if passed == total else 1
