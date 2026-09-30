@@ -994,12 +994,29 @@ $("#modes").addEventListener("click", (e) => {
   state.mode = btn.dataset.mode;
 });
 
+
+// Three bare words explained only by a `title` attribute -- which needs a
+// hover, so on a phone there was no explanation at all. The person who built
+// this could not say what the control did, which settles whether it needed
+// one. Wording follows what each level actually puts in the prompt.
+const CHALLENGE_HINT = {
+  low: "Answers what you asked. Raises a risk only if ignoring it would be negligent.",
+  medium: "Answers, then names the risks and the decisions you have not made yet.",
+  high: "Treats your question as a claim to test. Attacks your assumptions first, including the ones you did not say out loud.",
+};
+
+function showChallengeHint() {
+  const el = $("#challenge-hint");
+  if (el) el.textContent = CHALLENGE_HINT[state.challenge] || CHALLENGE_HINT.medium;
+}
+
 $("#challenge").addEventListener("click", (e) => {
   const b = e.target.closest(".chal");
   if (!b) return;
   document.querySelectorAll(".chal").forEach((x) => x.classList.remove("active"));
   b.classList.add("active");
   state.challenge = b.dataset.level;
+  showChallengeHint();
   // Remembered per browser: a preference, not shared state.
   try { localStorage.setItem("council_challenge", state.challenge); } catch {}
 });
@@ -1012,6 +1029,8 @@ try {
       x.classList.toggle("active", x.dataset.level === saved));
   }
 } catch {}
+// On load as well as on click, or the default arrives unexplained.
+showChallengeHint();
 
 $("#new-chat").addEventListener("click", newConversation);
 
