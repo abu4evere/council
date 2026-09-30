@@ -30,6 +30,10 @@
 <!-- Auth: sign in or create an account -->
 <div id="login" class="login hidden">
   <div class="login-card">
+    <a class="auth-back" id="auth-back" href="/?home=1">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg>
+      Back
+    </a>
     <div class="auth-brand"><svg class="auth-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M25.5 21.5 A11 11 0 1 1 21.5 6.5" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/><path d="M17.5 15 L28 5.4" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/><path d="M22.6 5 L28.4 5 L28.4 10.8" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
     <h1 id="auth-title">Unstuck</h1>
     <p id="auth-sub">Several models answer, then argue about it.</p>
@@ -95,7 +99,7 @@
           <input type="text" id="su-name" autocomplete="name" placeholder="Your name">
         </label>
         <label class="field">
-          <span>What will you use Council for? <i>optional</i></span>
+          <span>What will you use Unstuck for? <i>optional</i></span>
           <input type="text" id="su-purpose" maxlength="200"
                  placeholder="Deciding what to build next">
         </label>
@@ -172,7 +176,7 @@
             <button data-mode="debate" class="mode">Debate</button>
             <button data-mode="full" class="mode">Full</button>
           </div>
-          <div class="challenge" id="challenge" title="How hard the council pushes back">
+          <div class="challenge" id="challenge" title="How hard the models push back">
             <button data-level="low" class="chal">Gentle</button>
             <button data-level="medium" class="chal active">Balanced</button>
             <button data-level="high" class="chal">Brutal</button>
@@ -195,7 +199,7 @@
       <button id="keys-close" class="icon-x" aria-label="Close">&times;</button>
     </header>
     <p class="modal-sub">
-      Council runs on your own keys, so your quota is yours alone. Keys are
+      Unstuck runs on your own keys, so your quota is yours alone. Keys are
       encrypted before they are stored and never shown back to you in full.
       Every provider below has a free tier.
     </p>
@@ -204,7 +208,7 @@
     <hr class="modal-rule">
     <h3 class="modal-h3">Memory</h3>
     <p class="modal-sub">
-      A folder of markdown notes Council searches before every run, so you stop
+      A folder of markdown notes Unstuck searches before every run, so you stop
       pasting the same context into every question. An Obsidian vault is exactly
       this. Yours alone &mdash; other accounts never see it.
     </p>

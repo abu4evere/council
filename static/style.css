@@ -844,3 +844,14 @@ code, pre, kbd, samp, .mono { font-family: var(--font-mono); }
   ::view-transition-old(*),
   ::view-transition-new(*) { animation: none !important; }
 }
+
+.auth-back {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-bottom: 18px; padding: 6px 10px 6px 7px; margin-left: -7px;
+  border-radius: 8px;
+  font-size: 12.5px; color: var(--text-faint); text-decoration: none;
+  transition: color .16s ease, background .16s ease;
+}
+.auth-back:hover { color: var(--text); background: var(--surface-2); }
+.auth-back svg { width: 14px; height: 14px; }
+@media (max-width: 560px) { .auth-back { min-height: 40px; } }

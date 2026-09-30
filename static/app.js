@@ -129,6 +129,17 @@ function setAuthMode(mode) {
   }
 }
 
+// The auth card was a dead end: no way back to the landing page, and a guest
+// who opened it from the trial had no way back to their own chat either.
+$("#auth-back").addEventListener("click", (e) => {
+  if (state.guest && $("#app").classList.contains("hidden")) {
+    // Opened over a trial already in progress: return to it rather than
+    // throwing away what they were part-way through.
+    e.preventDefault();
+    showApp();
+  }
+});
+
 $("#auth-tabs").addEventListener("click", (e) => {
   const b = e.target.closest(".auth-tab");
   if (b) setAuthMode(b.dataset.tab);
@@ -1187,6 +1198,19 @@ async function boot() {
 (async function init() {
   try {
     const st = await api("/api/auth-status");
+    const asked = new URLSearchParams(location.search).get("mode");
+    const askedForAuth = asked === "login" || asked === "signup";
+
+    if (st.required && !st.authenticated && askedForAuth) {
+      // Someone who clicked "Sign in" asked for the form, and the guest trial
+      // below would have swallowed that and dropped them into a chat instead.
+      // A returning user with a trial run still unspent could not reach the
+      // login form at all.
+      showLogin();
+      setAuthMode(asked);
+      return;
+    }
+
     if (st.required && !st.authenticated && (st.guest_runs_left || 0) > 0) {
       // A stranger should see the product working before being asked to commit
       // to an account. One run, then the wall -- with their result on screen.
@@ -1200,13 +1224,9 @@ async function boot() {
     }
     if (st.required && !st.authenticated) {
       showLogin();
-      // The landing page's two buttons say which tab the visitor asked for.
-      // Falling back: a fresh instance with no accounts opens on "create
-      // account", because there is nothing yet to sign in to.
-      const asked = new URLSearchParams(location.search).get("mode");
-      setAuthMode(asked === "signup" || asked === "login"
-        ? asked
-        : (st.mode === "accounts" ? "login" : "signup"));
+      // No explicit request: a fresh instance with no accounts opens on
+      // "create account", because there is nothing yet to sign in to.
+      setAuthMode(st.mode === "accounts" ? "login" : "signup");
       return;
     }
     showApp();
