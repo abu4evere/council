@@ -90,8 +90,8 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Council runs on **free API tiers**. None of these need a payment card, and you
-do not need all of them -- Council uses whatever keys it finds and skips the
+Unstuck runs on **free API tiers**. None of these need a payment card, and you
+do not need all of them -- Unstuck uses whatever keys it finds and skips the
 rest. One key works; three or four is much better, because the entire value of
 the synthesis comes from the answers being genuinely different.
 
@@ -133,7 +133,7 @@ Open <http://localhost:8000>.
 
 ## Letting other people use your instance
 
-Council can run on each user's own API keys instead of yours. Sign in, open
+Unstuck can run on each user's own API keys instead of yours. Sign in, open
 **API keys** in the sidebar, and paste a key per provider.
 
 ```
@@ -205,7 +205,7 @@ produced, so it costs nothing and cannot fail on a rate limit.
 
 ## Long-term memory (optional)
 
-Point Council at a folder of markdown notes and it searches them before every
+Point Unstuck at a folder of markdown notes and it searches them before every
 run, so you stop pasting the same project context into every prompt. An
 Obsidian vault is exactly such a folder -- no plugin, no API, no sync service.
 
@@ -270,9 +270,21 @@ cloudflared tunnel --url http://localhost:8000
 That prints a public HTTPS URL. **Set `COUNCIL_PASSWORD` in `.env` before you do
 this** — otherwise anyone who finds the URL is spending your OpenRouter credit.
 
-Either way the PC has to stay awake and running the server. If you want it
-available with the PC off, deploy it instead (any host that runs Python and
-gives you a persistent disk for `council.db`).
+Either way the PC has to stay awake and running the server.
+
+**With the PC off.** There is a `Dockerfile` and a `fly.toml` in the repo:
+
+```bash
+fly auth login
+python fly_deploy.py
+```
+
+That creates the app, provisions a volume, pushes the secrets from `.env` over
+stdin and deploys. Two settings matter on anything the internet can reach.
+`REQUIRE_ACCOUNTS=true` closes the open-access fallback -- a fresh instance has
+no accounts, so without it the app is unauthenticated until the first person
+signs up. `COUNCIL_DB` must point at the mounted volume, because the app
+directory is part of the image and is replaced on every deploy.
 
 The conversation lives on the server, so phone and desktop see the same history.
 Pick up on your phone exactly where you left off on the desktop.
@@ -286,7 +298,7 @@ holds the key). `engine/config.py` assigns each seat a provider and a model:
 
 ```python
 Agent(key="pragmatist", label="Pragmatist",
-      provider="groq", model="llama-3.3-70b-versatile", ...)
+      provider="groq", model="openai/gpt-oss-120b", ...)
 ```
 
 Every provider speaks the OpenAI-compatible protocol, so adding a new one is a
