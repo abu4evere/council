@@ -135,7 +135,7 @@ a { color: inherit; text-decoration: none; }
 .center { text-align: center; }
 
 h1 {
-  font-size: clamp(34px, 5.6vw, 60px);
+  font-size: clamp(33px, 5.1vw, 56px);
   line-height: 1.06; letter-spacing: -.028em; font-weight: 640;
 }
 h2 {
@@ -157,7 +157,7 @@ h3 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
   position: relative;
   max-width: var(--maxw); margin: 0 auto;
   padding: 86px 28px 84px;
-  display: grid; grid-template-columns: 1.08fr .92fr; gap: 56px; align-items: center;
+  display: grid; grid-template-columns: 1.24fr .76fr; gap: 52px; align-items: center;
 }
 .eyebrow {
   font-size: 11.5px; text-transform: uppercase; letter-spacing: .13em;
@@ -375,8 +375,9 @@ code, pre, kbd, samp, .mono { font-family: var(--font-mono); }
 }
 
 /* Hero hierarchy done with weight and value instead of hue. */
-.hero h1 { color: var(--text-dim); letter-spacing: -.02em; }
-.hero h1 .grad-text { color: var(--text); }
+/* The payoff line is full strength; only the setup line recedes. */
+.hero h1 { color: var(--text); letter-spacing: -.02em; }
+.hero h1 .h1-quiet { color: var(--text-dim); }
 .brand-mark { width: 21px; height: 21px; flex: none; color: var(--text); }
 .foot-brand .brand-mark { width: 16px; height: 16px; }
 .brand:hover .brand-mark { transform: rotate(-14deg); }
