@@ -131,6 +131,46 @@ python -m uvicorn server:app --host 0.0.0.0 --port 8000
 
 Open <http://localhost:8000>.
 
+## Signing up
+
+An account needs a working email address. The flow is three steps -- address,
+code, then name and password -- in that order, because asking for a password
+before the code means throwing it away when the code fails, and a form that
+loses what you typed is a form people abandon.
+
+```
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@example.com
+SMTP_PASSWORD=an-app-password
+```
+
+Without these, codes are printed to the server console instead of sent. That is
+not a stub: it is how the flow is developed without a mail account, and how a
+self-hoster runs a private instance for one person. A Gmail App Password works
+and needs no domain. It also grants full SMTP access to that mailbox, so it
+belongs in `.env` and a dedicated address is the safer choice.
+
+A six-digit code is one in a million, which sounds safe and is not -- unthrottled,
+a script tries every one of them in minutes. So the code is only as good as the
+limits around it, and all of them are enforced server-side:
+
+| | |
+|---|---|
+| Codes expire | 15 minutes |
+| Wrong guesses | 5, then the code dies |
+| Resend | once a minute, 5 an hour per address |
+| Storage | SHA-256, salted with the address it was sent to |
+| Comparison | constant time |
+
+Binding the hash to the address matters: without it a code issued for one
+address verifies another. The final step re-checks the code, or it would be an
+unauthenticated "create an account for any address you like" endpoint.
+
+`ALLOW_LEGACY_SIGNUP=true` reopens the old username-and-password route, which
+otherwise returns 410. Leave it off on anything public -- if it is reachable,
+verification is optional, and optional verification is decoration.
+
 ## Letting other people use your instance
 
 Unstuck can run on each user's own API keys instead of yours. Sign in, open
@@ -157,6 +197,23 @@ A key is **verified with a real API call before it is stored**. A credential
 that authenticates but lacks permission is the worst kind of failure -- a
 GitHub token missing the `Models` scope returns a plain-text `200 OK` that
 parses as an empty answer, which looks exactly like success.
+
+Two settings are not optional once strangers can reach it.
+
+```
+REQUIRE_ACCOUNTS=true        # or the app is open until the first signup
+USER_SPEND_CAP_CENTS=100     # lifetime paid spend per account, in cents
+```
+
+`REQUIRE_ACCOUNTS` closes a fallback that is right for a laptop and wrong for
+the internet: with no accounts and no shared password the app serves everyone,
+so a freshly deployed instance is unauthenticated until somebody signs up.
+Signup and login stay open, or the first account could never be created.
+
+`USER_SPEND_CAP_CENTS` is a lifetime cap, not a daily one, because a daily cap
+is a rate rather than a limit -- the same person can spend it again every
+morning. It bounds paid spend only; with `PREMIUM_SEATS` off every run uses
+free providers and the cap never fires.
 
 ## Optionally paying for the two seats that need it
 
@@ -291,6 +348,72 @@ Pick up on your phone exactly where you left off on the desktop.
 
 ---
 
+## Why a slow seat no longer holds up the run
+
+Measured across stored runs rather than guessed. Four proposers would finish in
+33 seconds and the fifth would sit silent for 153, holding the whole run open;
+synthesis emitted reasoning at 24 seconds and its first answer token at 107,
+costing 243 seconds of a 564-second run on its own.
+
+Those are two different problems and one threshold cannot tell them apart, so
+there are two:
+
+```
+HEDGE_AFTER=18           # no output at all: stuck behind a rate limit
+HEDGE_CONTENT_AFTER=55   # reasoning, but still no answer: alive, just slow
+```
+
+Past either, a second provider is started for the same seat and the two race.
+The first usable answer wins and the loser is cancelled. **Nothing is dropped** --
+both attempts are producing the same seat's answer, so the panel still fills;
+it just fills from whichever vendor was awake.
+
+A seat that is already streaming is never hedged. Spending a second provider's
+quota to overtake a model that is delivering is pure waste, and silence is the
+signal that the retry loop has it. When a hedge does start, the primary is
+muted: at that moment it has produced no answer by definition, so the panel is
+clean and whichever side wins fills it in one piece rather than interleaving
+two different answers into one box.
+
+Honest limit: this caps the tail. Whether it lowers the *average* run needs
+more than one measurement per configuration, and run-to-run variance here is
+large -- full runs have ranged 250 to 646 seconds on identical code.
+
+## Light and dark
+
+Both, with a switch in the header, remembered per browser and shared between
+the landing page and the app. It follows the system setting until you choose,
+and an explicit choice wins from then on.
+
+Every colour is a token; dark lives in `:root` and light overrides the same
+names under `[data-theme="light"]`, so no rule is written twice. A script in
+`<head>` applies the stored choice before first paint, because reading it
+afterwards shows one frame of the wrong theme on every load.
+
+The interface is otherwise monochrome. Saturated colour means one thing -- a
+model's stance, agree, partly or dissent -- and both palettes are checked
+against WCAG AA, which is why the light stance colours are darker rather than
+the same hexes on a pale background.
+
+## What the chat will not tell you
+
+Vendor and model names are stripped from every event on the way out of the
+server. The chat shows the seat -- Pragmatist, Skeptic, Judge -- because that
+is the part that carries meaning; which vendor happened to answer is an
+implementation detail, and naming it invites the reader to grade an answer by
+its badge instead of its content.
+
+The redaction happens as an event leaves the server, not in the browser: a
+front-end fix leaves the names sitting in the network tab. The database keeps
+the full record, so an operator can still tell which model wrote what.
+
+```
+SHOW_MODEL_NAMES=true    # put them back, for debugging
+```
+
+
+---
+
 ## Changing the models
 
 Two files. `engine/providers.py` lists the providers (base URL + which env var
@@ -350,14 +473,22 @@ reasoning itself is streamed to the UI and shown dimmed while a seat thinks.
 ## Architecture
 
 ```
-static/          the UI: one HTML page, no build step, no framework
-server.py        FastAPI: conversations, turns, SSE streaming
+static/          the UI: two HTML pages, no build step, no framework
+  theme.js       light/dark, shared by both pages
+server.py        FastAPI: conversations, turns, SSE streaming, auth
 db.py            SQLite: conversations, turns, and an append-only event log
 check_key.py     preflight: which providers work, which slugs are stale
+Dockerfile       }
+fly.toml         }  deployment: volume-backed SQLite, scale to zero
+fly_deploy.py    }  app, volume, secrets and deploy in one command
 engine/
   config.py      the roster and tunables   <- start here
   prompts.py     the personas              <- and here
   providers.py   free providers and their base URLs
+  orchestrator.py  runs the seats, and hedges the ones that stall
+  verification.py  signup codes: expiry, attempt caps, throttling
+  mailer.py        sends them, or prints them when SMTP is unset
+  disagreement.py  lifts the structured verdict out of the prose
   orchestrator.py  fan-out/fan-in, and the debate loop
   llm.py         provider-agnostic streaming client
 ```
@@ -410,14 +541,30 @@ Most of the code is failure handling, because free tiers fail constantly:
 
 ## Tests
 
-Both run offline against a fake model and cost nothing:
+Eleven suites, **256 checks**, all offline against fake models. They cost
+nothing and need no API key:
 
 ```bash
-python smoke_test.py    # the engine: all modes, and every partial-failure path
-python test_server.py   # HTTP, SSE, persistence, reconnect replay, memory
+python smoke_test.py         # the engine: all modes, every partial-failure path
+python test_server.py        # HTTP, SSE, persistence, reconnect replay
+python test_auth.py          # the shared-password gate
+python test_accounts.py      # sessions, hashing, per-user isolation
+python test_byok.py          # per-user keys, encryption, masking
+python test_vault.py         # markdown search
+python test_disagreement.py  # parsing the structured verdict
+python test_memo.py          # decision memo export
+python test_quota.py         # free runs, credit, the spend cap
+python test_verification.py  # signup codes and every refusal around them
+python test_hedge.py         # racing a stalled seat, and never racing a live one
 ```
 
-Run them after touching the orchestrator or the event bus. The event-ordering
-bug they caught — concurrent emits overtaking each other and getting silently
-discarded by the subscriber's dedupe — is invisible until you look for missing
-sequence numbers.
+Run them after touching the orchestrator or the event bus. Three bugs they have
+caught, none of which were visible without looking:
+
+- concurrent event emits overtaking each other and being silently discarded by
+  the subscriber's dedupe, so eight events vanished per run
+- `asyncio.wait` on a set containing an already-finished task returns instantly
+  every time, which turns a wait into a hot loop -- twice, in two different
+  places, in the hedging code
+- the decisions panel firing **zero** times in twenty runs, because models split
+  their output across two fenced blocks and the parser read only the first
