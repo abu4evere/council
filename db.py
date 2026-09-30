@@ -599,6 +599,30 @@ def finish_turn(tid: str, final_answer: str | None, error: str | None = None) ->
         conn.close()
 
 
+def fail_orphaned_runs() -> int:
+    """Mark every still-'running' turn as failed. Returns how many.
+
+    A run lives in an asyncio task, not in the database, so a process that
+    stops mid-run -- a deploy, a crash, a host that suspends the machine --
+    leaves its turn marked `running` forever. The interface believes it and
+    shows a spinner that will never resolve.
+
+    This is the first thing the server does on boot, because by definition
+    nothing can legitimately be running yet: any task that owned those rows
+    died with the previous process.
+    """
+    conn = connect()
+    try:
+        cur = conn.execute(
+            "UPDATE turns SET status = 'error', error = ? WHERE status = 'running'",
+            ("The server restarted while this run was in progress, so it was "
+             "interrupted. Nothing was charged -- ask again.",))
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
 def get_turn(tid: str) -> dict | None:
     conn = connect()
     try:

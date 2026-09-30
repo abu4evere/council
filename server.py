@@ -1168,6 +1168,14 @@ async def api_vault_reindex(council_session: str | None = Cookie(default=None)):
 @app.on_event("startup")
 async def startup():
     db.init()
+    # Runs live in asyncio tasks, not in the database. Anything still marked
+    # running belonged to a process that is already gone, so it can never
+    # finish -- and a user watching it sees a spinner with no end. The first
+    # real user hit exactly this: a Full run interrupted by the host stopping
+    # the machine sat at "running" for 91 minutes.
+    orphaned = db.fail_orphaned_runs()
+    if orphaned:
+        print(f"[startup] marked {orphaned} interrupted run(s) as failed", flush=True)
     # Index once at boot so the first question already has memory. Cheap for a
     # personal vault; re-run from the UI after editing notes.
     try:
