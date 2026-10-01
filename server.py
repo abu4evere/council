@@ -15,6 +15,7 @@ import secrets
 import time
 from pathlib import Path
 
+import httpx
 from dotenv import load_dotenv
 from fastapi import Cookie, FastAPI, HTTPException, Request, Response
 from fastapi.responses import (FileResponse, JSONResponse, RedirectResponse,
@@ -24,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv()
 
 import db  # noqa: E402
-from engine import mailer, triage, verification  # noqa: E402
+from engine import chat, mailer, triage, verification  # noqa: E402
 from engine import (accounts, config, disagreement, keyring, memo, prompts,
                     providers, quota, vault)  # noqa: E402
 from engine.llm import check_configured_models, list_models  # noqa: E402
@@ -672,15 +673,26 @@ async def api_create_turn(
         title = question[:60] + ("..." if len(question) > 60 else "")
         await asyncio.to_thread(db.rename_conversation, cid, title)
 
-    # "yoooo" does not need five models, a synthesis and a debate. Answer it
-    # here, before any quota is touched: the free tiers are shared across
-    # everyone on the instance, and a few people saying hello can cost the
-    # person with a real question their run for the day.
-    if triage.is_small_talk(question):
-        await asyncio.to_thread(db.finish_turn, turn_id, triage.REPLY, None)
-        return {"turn_id": turn_id, "small_talk": True}
-
     user_keys = await asyncio.to_thread(load_user_keys, owner_id(user))
+
+    # "yoooo" does not need five models, a synthesis and a debate. One small
+    # model answers in about a third of a second -- a tenth of the cost, and
+    # fast enough to feel like conversation rather than a form. This runs
+    # before any quota is touched, so saying hello costs nobody anything.
+    if triage.is_small_talk(question):
+        first = ((user or {}).get("full_name") or "").strip().split(" ")[0] or None
+        asked_before = [t.get("user_prompt") for t in (conv.get("turns") or [])]
+        text = None
+        try:
+            with keyring.use_keys(user_keys or {}):
+                async with httpx.AsyncClient(timeout=20) as hc:
+                    text = await chat.reply(hc, question, first, asked_before)
+        except Exception:
+            text = None
+        # The canned text is the floor, not the plan: a greeting is never
+        # worth failing a request over.
+        await asyncio.to_thread(db.finish_turn, turn_id, text or triage.REPLY, None)
+        return {"turn_id": turn_id, "small_talk": True}
 
     # Limits apply only when the run spends the operator's keys. Reserve BEFORE
     # the run, not after: checking a balance once the money is gone is an
