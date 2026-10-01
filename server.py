@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv()
 
 import db  # noqa: E402
-from engine import mailer, verification  # noqa: E402
+from engine import mailer, triage, verification  # noqa: E402
 from engine import (accounts, config, disagreement, keyring, memo, prompts,
                     providers, quota, vault)  # noqa: E402
 from engine.llm import check_configured_models, list_models  # noqa: E402
@@ -671,6 +671,14 @@ async def api_create_turn(
     if not conv["turns"]:
         title = question[:60] + ("..." if len(question) > 60 else "")
         await asyncio.to_thread(db.rename_conversation, cid, title)
+
+    # "yoooo" does not need five models, a synthesis and a debate. Answer it
+    # here, before any quota is touched: the free tiers are shared across
+    # everyone on the instance, and a few people saying hello can cost the
+    # person with a real question their run for the day.
+    if triage.is_small_talk(question):
+        await asyncio.to_thread(db.finish_turn, turn_id, triage.REPLY, None)
+        return {"turn_id": turn_id, "small_talk": True}
 
     user_keys = await asyncio.to_thread(load_user_keys, owner_id(user))
 

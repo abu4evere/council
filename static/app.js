@@ -936,12 +936,21 @@ async function send() {
   scrollDown();
 
   try {
-    const { turn_id } = await api(`/api/conversations/${state.conversationId}/turns`, {
+    const res = await api(`/api/conversations/${state.conversationId}/turns`, {
       method: "POST",
       body: JSON.stringify({ prompt, mode: state.mode, challenge: state.challenge }),
     });
-    turn.dataset.turnId = turn_id;
-    attachStream(turn_id, turn);
+    turn.dataset.turnId = res.turn_id;
+    if (res.small_talk) {
+      // No run was started, so there is no stream to attach to. The server
+      // already stored the reply; show it and stop.
+      const t = await api(`/api/turns/${res.turn_id}`);
+      turn.querySelectorAll(".agents, .stage").forEach((n) => n.remove());
+      turn.appendChild(finalBlock(t.final_answer));
+      scrollDown();
+      return;
+    }
+    attachStream(res.turn_id, turn);
   } catch (err) {
     if (state.guest && /free run|not authenticated/i.test(err.message)) {
       // Their result is still on screen; that is the argument for signing up.
