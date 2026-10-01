@@ -39,6 +39,18 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
+CREATE TABLE IF NOT EXISTS visitor_usage (
+    fingerprint TEXT NOT NULL,
+    day         TEXT NOT NULL,
+    runs        INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (fingerprint, day)
+);
+
+CREATE TABLE IF NOT EXISTS instance_usage (
+    day  TEXT PRIMARY KEY,
+    runs INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS verifications (
     email       TEXT PRIMARY KEY,
     code_hash   TEXT NOT NULL,
@@ -292,6 +304,75 @@ def create_verified_user(email: str, full_name: str, purpose: str,
 
 
 # --- usage and credit ------------------------------------------------------
+
+
+# --- free-run limits, counted where they survive a restart -----------------
+
+def visitor_runs_today(fingerprint: str, day: str) -> int:
+    conn = connect()
+    try:
+        row = conn.execute(
+            "SELECT runs FROM visitor_usage WHERE fingerprint = ? AND day = ?",
+            (fingerprint, day)).fetchone()
+        return row["runs"] if row else 0
+    finally:
+        conn.close()
+
+
+def count_visitor_run(fingerprint: str, day: str) -> int:
+    """Record one run for this visitor and return the new total.
+
+    Insert and increment in ONE statement: two requests arriving together must
+    not both read zero and both decide they are allowed.
+    """
+    conn = connect()
+    try:
+        conn.execute(
+            """INSERT INTO visitor_usage (fingerprint, day, runs) VALUES (?,?,1)
+               ON CONFLICT(fingerprint, day) DO UPDATE SET runs = runs + 1""",
+            (fingerprint, day))
+        conn.commit()
+        row = conn.execute(
+            "SELECT runs FROM visitor_usage WHERE fingerprint = ? AND day = ?",
+            (fingerprint, day)).fetchone()
+        return row["runs"] if row else 1
+    finally:
+        conn.close()
+
+
+def instance_runs_today(day: str) -> int:
+    conn = connect()
+    try:
+        row = conn.execute("SELECT runs FROM instance_usage WHERE day = ?", (day,)).fetchone()
+        return row["runs"] if row else 0
+    finally:
+        conn.close()
+
+
+def count_instance_run(day: str) -> int:
+    """One more run against the shared free tiers. Returns the new total."""
+    conn = connect()
+    try:
+        conn.execute(
+            """INSERT INTO instance_usage (day, runs) VALUES (?,1)
+               ON CONFLICT(day) DO UPDATE SET runs = runs + 1""", (day,))
+        conn.commit()
+        row = conn.execute("SELECT runs FROM instance_usage WHERE day = ?", (day,)).fetchone()
+        return row["runs"] if row else 1
+    finally:
+        conn.close()
+
+
+def prune_visitor_usage(before_day: str) -> int:
+    """Drop rows older than a day. Nothing here is worth keeping as history."""
+    conn = connect()
+    try:
+        cur = conn.execute("DELETE FROM visitor_usage WHERE day < ?", (before_day,))
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
 
 def get_usage(user_id: str, day: str) -> dict:
     """This user's counters, rolling the daily count over when the day changes."""

@@ -9,6 +9,7 @@ first -- otherwise anyone who finds the URL is spending your OpenRouter credit.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import secrets
@@ -203,7 +204,37 @@ SHARED_SESSIONS: set[str] = set()
 # vault, no keys -- just one run so the visitor can see what the thing does
 # before being asked to commit to it.
 GUEST_RUNS_ALLOWED = int(os.environ.get("GUEST_RUNS", "1"))
-_GUEST_USED: dict[str, int] = {}
+
+# The ceiling on runs this instance will spend of the operator's free tiers in
+# a day. Those tiers are shared by everyone, and without a cap the failure
+# lands on whoever asks after they are gone rather than on whoever used them.
+# Default sits under the measured ~80 full runs a day so there is headroom.
+DAILY_RUN_CAP = int(os.environ.get("DAILY_RUN_CAP", "70"))
+
+
+def client_ip(request: Request) -> str:
+    """The visitor's address, not the proxy's.
+
+    Behind Fly every request arrives from the edge, so request.client.host is
+    the same handful of values for everybody and would have made one shared
+    limit for the entire internet.
+    """
+    for header in ("fly-client-ip", "x-forwarded-for", "x-real-ip"):
+        value = request.headers.get(header)
+        if value:
+            return value.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def visitor_fingerprint(request: Request) -> str:
+    """A stable, non-identifying key for one visitor for one day.
+
+    The address is salted with COUNCIL_SECRET and hashed, so this table can
+    answer "has this person had their run today" without storing anything that
+    says who they are. The salt is a secret the operator already has to keep.
+    """
+    salt = os.environ.get("COUNCIL_SECRET", "unstuck")
+    return hashlib.sha256(f"{salt}:{client_ip(request)}".encode()).hexdigest()[:32]
 
 
 def guest_id(request: Request, response: Response | None = None) -> str:
@@ -223,8 +254,15 @@ def guest_id(request: Request, response: Response | None = None) -> str:
     return gid
 
 
-def guest_runs_left(gid: str) -> int:
-    return max(0, GUEST_RUNS_ALLOWED - _GUEST_USED.get(gid, 0))
+def guest_runs_left(request: Request) -> int:
+    """Counted in the database, because an in-memory counter is not a limit.
+
+    The previous version lived in a dict. This machine scales to zero whenever
+    it is idle and restarts on every deploy, so that dict was wiped several
+    times a day and the limit it was supposed to enforce never actually held.
+    """
+    used = db.visitor_runs_today(visitor_fingerprint(request), quota.today())
+    return max(0, GUEST_RUNS_ALLOWED - used)
 
 # Failed login attempts per client address. Password strength is only half the
 # story -- an unthrottled login form lets a script try millions of guesses.
@@ -561,7 +599,7 @@ async def auth_status(request: Request, response: Response,
         "can_signup": True,
         "verified_signup": True,
         "mail_configured": mailer.configured(),
-        "guest_runs_left": (0 if user else guest_runs_left(guest_id(request, response))),
+        "guest_runs_left": (0 if user else guest_runs_left(request)),
     }
 
 
@@ -582,7 +620,7 @@ async def api_create_conversation(request: Request, response: Response,
     if user is None and council_session not in SHARED_SESSIONS:
         # Guest: allowed a conversation only while they have a run left.
         gid = guest_id(request, response)
-        if guest_runs_left(gid) <= 0:
+        if guest_runs_left(request) <= 0:
             raise HTTPException(401, "not authenticated")
         cid = await asyncio.to_thread(db.create_conversation, "Trial", None)
         return {"id": cid, "guest": True}
@@ -633,7 +671,7 @@ async def api_create_turn(
     gid = ""
     if is_guest:
         gid = guest_id(request, response)
-        if guest_runs_left(gid) <= 0:
+        if guest_runs_left(request) <= 0:
             raise HTTPException(
                 401,
                 "That was your free run. Create an account to keep going -- it "
@@ -694,12 +732,28 @@ async def api_create_turn(
         await asyncio.to_thread(db.finish_turn, turn_id, text or triage.REPLY, None)
         return {"turn_id": turn_id, "small_talk": True}
 
+    # The shared ceiling, before any per-user accounting. Free tiers are one
+    # pot for the whole instance, so without this the people who arrive last
+    # pay for the people who arrived first -- they get the failure, having used
+    # nothing. Someone running on their own keys is not drawing on the pot and
+    # is not counted or refused.
+    on_our_money = run_is_on_our_money(user_keys)
+    if on_our_money:
+        spent_today = await asyncio.to_thread(db.instance_runs_today, quota.today())
+        if spent_today >= DAILY_RUN_CAP:
+            raise HTTPException(
+                429,
+                "This instance has used up today's free model quota. It resets "
+                "at midnight UTC. Add your own API keys under 'API keys' to "
+                "keep going now.")
+        await asyncio.to_thread(db.count_instance_run, quota.today())
+
     # Limits apply only when the run spends the operator's keys. Reserve BEFORE
     # the run, not after: checking a balance once the money is gone is an
     # accounting entry, not a limit.
     reserved = 0
     uid = owner_id(user)
-    if uid and run_is_on_our_money(user_keys):
+    if uid and on_our_money:
         day = quota.today()
         usage = await asyncio.to_thread(db.get_usage, uid, day)
         uses_paid = config.PREMIUM_SEATS
@@ -714,8 +768,9 @@ async def api_create_turn(
         else:
             await asyncio.to_thread(db.count_free_run, uid, day)
 
-    if is_guest and gid:
-        _GUEST_USED[gid] = _GUEST_USED.get(gid, 0) + 1
+    if is_guest:
+        await asyncio.to_thread(db.count_visitor_run,
+                                visitor_fingerprint(request), quota.today())
 
     bus = RunBus(turn_id)
     BUSES[turn_id] = bus
