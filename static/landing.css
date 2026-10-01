@@ -636,3 +636,42 @@ h1 em { font-size: 1.06em; }
 :root[data-switching] *,
 :root[data-switching] *::before,
 :root[data-switching] *::after { transition: none !important; }
+
+
+/* ---- how to use it ------------------------------------------------------ */
+.how-lede { color: var(--text-dim); font-size: 16px; margin-bottom: 38px; }
+.how-grid { display: block; }
+
+.how-steps {
+  list-style: none; counter-reset: s; padding: 0; margin: 0;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 26px 48px;
+}
+.how-steps li { counter-increment: s; position: relative; padding-left: 38px; }
+.how-steps li::before {
+  content: counter(s);
+  position: absolute; left: 0; top: -1px;
+  width: 24px; height: 24px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--text); color: var(--bg);
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+}
+.how-steps b { display: block; font-size: 15px; margin-bottom: 4px; color: var(--text); }
+.how-steps span { font-size: 14.5px; line-height: 1.6; color: var(--text-dim); }
+
+
+
+.how-tables { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 54px; }
+.how-table dl { margin: 14px 0 0; }
+.how-table dt {
+  font-family: var(--font-mono); font-size: 12.5px; font-weight: 600;
+  color: var(--text); margin-top: 14px;
+}
+.how-table dt:first-of-type { margin-top: 0; }
+.how-table dd {
+  margin: 3px 0 0; font-size: 14px; line-height: 1.55; color: var(--text-dim);
+}
+
+@media (max-width: 900px) {
+  .how-steps, .how-tables { grid-template-columns: 1fr; gap: 26px; }
+  .how-tables { margin-top: 40px; }
+}
