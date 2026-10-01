@@ -39,6 +39,13 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
+CREATE TABLE IF NOT EXISTS processed_payments (
+    order_id   TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    cents      INTEGER NOT NULL,
+    created_at REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS visitor_usage (
     fingerprint TEXT NOT NULL,
     day         TEXT NOT NULL,
@@ -273,6 +280,16 @@ def clear_verification(email: str) -> None:
         conn.close()
 
 
+def get_user_by_id(user_id: str) -> dict | None:
+    """Look an account up by its id. Used when a payment names one."""
+    conn = connect()
+    try:
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
 def get_user_by_email(email: str) -> dict | None:
     conn = connect()
     try:
@@ -307,6 +324,27 @@ def create_verified_user(email: str, full_name: str, purpose: str,
 
 
 # --- free-run limits, counted where they survive a restart -----------------
+
+def record_payment(order_id: str, user_id: str, cents: int) -> bool:
+    """Record a payment. False if this order was already credited.
+
+    Lemon Squeezy retries a webhook until it gets a 200, so the same
+    successful payment arrives several times as a matter of course. The insert
+    is the lock: the primary key refuses the second one, and the caller grants
+    credit only when this returns True.
+    """
+    conn = connect()
+    try:
+        conn.execute(
+            "INSERT INTO processed_payments (order_id, user_id, cents, created_at)"
+            " VALUES (?,?,?,?)", (order_id, user_id, cents, _now()))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
+
 
 def visitor_runs_today(fingerprint: str, day: str) -> int:
     conn = connect()

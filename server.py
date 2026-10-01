@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv()
 
 import db  # noqa: E402
-from engine import chat, mailer, triage, verification  # noqa: E402
+from engine import chat, mailer, payments, triage, verification  # noqa: E402
 from engine import (accounts, config, disagreement, keyring, memo, prompts,
                     providers, quota, vault)  # noqa: E402
 from engine.llm import check_configured_models, list_models  # noqa: E402
@@ -1032,6 +1032,70 @@ def _reindex_vault(user_id: str | None) -> dict:
         return {"configured": True, "path": str(root), "sections": n}
     finally:
         conn.close()
+
+
+@app.post("/api/webhooks/lemonsqueezy")
+async def lemonsqueezy_webhook(request: Request):
+    """Grant credit for a completed payment.
+
+    Anyone on the internet can reach this, so it proves the request came from
+    Lemon Squeezy before it does anything. The RAW body is used for the
+    signature -- re-reading it as JSON and re-serialising would change the
+    bytes and reject payments that were perfectly valid.
+
+    It answers 200 to anything it has decided not to act on, because a
+    non-200 makes Lemon Squeezy retry forever over something that will never
+    succeed. The log is where the reason goes.
+    """
+    raw = await request.body()
+    signature = request.headers.get("x-signature")
+
+    try:
+        payments.verify(raw, signature)
+        order_id, uid, cents = payments.parse_order(raw)
+    except payments.Rejected as exc:
+        print(f"[payments] ignored: {exc}", flush=True)
+        return {"ok": True, "credited": False}
+
+    user = await asyncio.to_thread(db.get_user_by_id, uid)
+    if not user:
+        print(f"[payments] order {order_id} names unknown account {uid}", flush=True)
+        return {"ok": True, "credited": False}
+
+    # The insert is the lock. If this order has been seen, the retry stops
+    # here and nobody is credited twice for one payment.
+    first_time = await asyncio.to_thread(db.record_payment, order_id, uid, cents)
+    if not first_time:
+        print(f"[payments] order {order_id} already credited", flush=True)
+        return {"ok": True, "credited": False}
+
+    await asyncio.to_thread(db.add_credit, uid, cents)
+    print(f"[payments] credited {cents}c to {uid} for order {order_id}", flush=True)
+    return {"ok": True, "credited": True}
+
+
+@app.get("/api/credit")
+async def api_credit(council_session: str | None = Cookie(default=None)):
+    """Balance, and where to go to add more."""
+    user = require_user(council_session)
+    if not user:
+        return {"tracked": False}
+    usage = await asyncio.to_thread(db.get_usage, user["id"], quota.today())
+    url = payments.checkout_url()
+    if url:
+        # Lemon Squeezy passes these straight back on the webhook, which is how
+        # the payment finds its way to the right account. Matching on email
+        # instead breaks for anyone who pays from a different address.
+        joiner = "&" if "?" in url else "?"
+        url = (f"{url}{joiner}checkout[custom][user_id]={user['id']}"
+               f"&checkout[email]={user.get('email') or ''}")
+    return {
+        "tracked": True,
+        "credit_cents": usage.get("credit_cents", 0),
+        "spent_cents": usage.get("spent_cents", 0),
+        "checkout_url": url,
+        "available": bool(url) and payments.configured(),
+    }
 
 
 @app.get("/api/usage")
