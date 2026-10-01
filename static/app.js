@@ -326,6 +326,68 @@ $("#step-profile").addEventListener("submit", async (e) => {
   });
 });
 
+
+/* ---------------- credit ----------------
+   Shown in runs as well as money, because "412c" is not a number anyone can
+   act on. The per-run figures come from the same table the metering charges
+   against, so what this promises and what it bills cannot drift apart. */
+
+const RUN_COST_CENTS = { moa: 5, debate: 8, full: 12 };
+
+function describeRuns(cents) {
+  if (!cents) return "";
+  const full = Math.floor(cents / RUN_COST_CENTS.full);
+  const quick = Math.floor(cents / RUN_COST_CENTS.moa);
+  if (full < 1) return `Not quite enough for a Full run (${quick} Quick).`;
+  return `About ${full} Full runs, or ${quick} Quick.`;
+}
+
+async function openCredit() {
+  $("#credit-modal").classList.remove("hidden");
+  $("#credit-amount").textContent = "...";
+  $("#credit-runs").textContent = "";
+  // Hidden until the server says a checkout exists. Starting hidden rather
+  // than hiding later means every failure path -- not signed in, offline,
+  // server error -- lands on "no button" instead of a button that goes
+  // nowhere. The first version only hid it on the success path.
+  $("#credit-topup").classList.add("hidden");
+  $("#credit-unavailable").classList.remove("hidden");
+  $("#credit-blurb").classList.add("hidden");
+  try {
+    const c = await api("/api/credit");
+    if (!c.tracked) {
+      $("#credit-amount").textContent = "--";
+      return;
+    }
+    const cents = c.credit_cents || 0;
+    $("#credit-amount").textContent = `$${(cents / 100).toFixed(2)}`;
+    $("#credit-runs").textContent = describeRuns(cents);
+
+    const link = $("#credit-topup");
+    if (c.available && c.checkout_url) {
+      link.href = c.checkout_url;
+      link.classList.remove("hidden");
+      $("#credit-unavailable").classList.add("hidden");
+      $("#credit-blurb").classList.remove("hidden");
+    } else {
+      // A button that leads nowhere is worse than no button.
+      link.classList.add("hidden");
+      $("#credit-unavailable").classList.remove("hidden");
+      $("#credit-blurb").classList.add("hidden");
+    }
+  } catch (err) {
+    $("#credit-amount").textContent = "--";
+    $("#credit-runs").textContent = err.message || "Could not load your balance.";
+  }
+}
+
+$("#open-credit").addEventListener("click", openCredit);
+$("#credit-close").addEventListener("click", () =>
+  $("#credit-modal").classList.add("hidden"));
+$("#credit-modal").addEventListener("click", (e) => {
+  if (e.target.id === "credit-modal") $("#credit-modal").classList.add("hidden");
+});
+
 $("#logout").addEventListener("click", async () => {
   try { await api("/api/logout", { method: "POST" }); } catch {}
   location.reload();

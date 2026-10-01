@@ -131,6 +131,7 @@
         <span id="whoami-name"></span>
         <button id="logout" class="link-btn">Sign out</button>
       </div>
+      <button id="open-credit" class="btn-ghost">Credit</button>
       <button id="open-keys" class="btn-ghost">API keys</button>
       <button id="check-models" class="btn-ghost">Check models</button>
     </div>
@@ -190,6 +191,48 @@
       </div>
     </div>
   </main>
+</div>
+
+<!-- Credit -->
+<div id="credit-modal" class="modal hidden">
+  <div class="modal-card">
+    <header class="modal-head">
+      <h2>Credit</h2>
+      <button id="credit-close" class="icon-x" aria-label="Close">&times;</button>
+    </header>
+
+    <div class="credit-balance">
+      <span class="rail-label">Balance</span>
+      <div class="credit-amount" id="credit-amount">&mdash;</div>
+      <div class="credit-runs" id="credit-runs"></div>
+    </div>
+
+    <p class="modal-sub" id="credit-blurb">
+      Credit is spent as you use it, not monthly. It does not expire, and it
+      only goes down when a run actually costs something. You are never
+      charged for a run that fails.
+    </p>
+
+    <a id="credit-topup" class="btn-solid-wide" href="#" target="_blank"
+       rel="noopener">Add credit</a>
+
+    <p class="modal-note" id="credit-unavailable">
+      Paid credit is not switched on for this instance yet. The free tier below
+      is all there is for now.
+    </p>
+
+    <hr class="modal-rule">
+    <h3 class="modal-h3">What you get free</h3>
+    <p class="modal-sub">
+      Five runs a day on free models, shared with everyone else using this
+      instance &mdash; about eighty runs a day across all users together. When
+      that pot is empty it refills at midnight UTC.
+    </p>
+    <p class="modal-sub">
+      Paid runs put a stronger model on the two seats that decide the answer:
+      the one that merges the five opinions, and the one that rules the debate.
+    </p>
+  </div>
 </div>
 
 <!-- API keys -->
