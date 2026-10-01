@@ -143,8 +143,6 @@ h2 {
   margin-bottom: 18px;
 }
 h3 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
-.accent { color: var(--accent); }
-.dim { color: var(--text-dim); }
 
 /* ---------- hero ---------- */
 .hero::before {
@@ -314,13 +312,11 @@ blockquote p { font-size: 14.5px; color: var(--text-dim); line-height: 1.68; }
   .hero::before { display: none; }
 }
 
-
 /* ======================================================================
    Monochrome system. Colour appears ONLY as model stance.
    ====================================================================== */
 
 body { font-family: var(--font-sans); }
-code, pre, kbd, samp, .mono { font-family: var(--font-mono); }
 
 /* Primary action: the brightest thing on the page, not a coloured thing. */
 .btn.solid, #auth-submit, .signup-step > button[type="submit"] {
@@ -396,7 +392,6 @@ html { overflow-x: clip; }
   .hero-cta .btn { flex: 1 1 auto; justify-content: center; }
 }
 
-
 /* ---- the model strip ---- */
 .vendors {
   list-style: none; padding: 0; margin: 26px 0 0;
@@ -429,7 +424,6 @@ html { overflow-x: clip; }
   .vendors li { padding: 16px 6px; }
 }
 
-
 /* ---- brand glow ----------------------------------------------------------
    Monochrome until you touch it. :active covers phones, where there is no
    hover and a tap is the only way to ask. */
@@ -456,7 +450,6 @@ html { overflow-x: clip; }
 @media (prefers-reduced-motion: reduce) {
   .vendors li, .vendors li:hover, .vendors li:active { transform: none; }
 }
-
 
 /* ---- a real run ---------------------------------------------------------
    The one section allowed colour, because the one thing colour means in this
@@ -533,7 +526,6 @@ html { overflow-x: clip; }
   .run-q { max-width: none; }
 }
 
-
 /* ---- room to breathe ----------------------------------------------------
    Cutting sections without widening the spacing just produces a shorter
    cramped page. These override the values above. */
@@ -556,7 +548,6 @@ h2 { margin-bottom: 24px; }
 /* The diagram carries this section alone now, so it gets the space the three
    steps used to take rather than sitting tight under the heading. */
 #how .arch { margin-top: 44px; }
-
 
 /* ---- type -------------------------------------------------------------- */
 body { font-family: var(--font-sans); }
@@ -617,7 +608,6 @@ h1 em { font-size: 1.06em; }
   .final .vendors { margin-top: 56px; }
 }
 
-
 /* ---- the theme wipe -----------------------------------------------------
    The browser's default for a view transition is a cross-fade between the two
    snapshots. That fights the circle, so both layers are held still and the
@@ -636,7 +626,6 @@ h1 em { font-size: 1.06em; }
 :root[data-switching] *,
 :root[data-switching] *::before,
 :root[data-switching] *::after { transition: none !important; }
-
 
 /* ---- how to use it ------------------------------------------------------ */
 .how-lede { color: var(--text-dim); font-size: 16px; margin-bottom: 38px; }
@@ -657,8 +646,6 @@ h1 em { font-size: 1.06em; }
 }
 .how-steps b { display: block; font-size: 15px; margin-bottom: 4px; color: var(--text); }
 .how-steps span { font-size: 14.5px; line-height: 1.6; color: var(--text-dim); }
-
-
 
 .how-tables { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 54px; }
 .how-table dl { margin: 14px 0 0; }

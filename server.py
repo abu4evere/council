@@ -237,23 +237,6 @@ def visitor_fingerprint(request: Request) -> str:
     return hashlib.sha256(f"{salt}:{client_ip(request)}".encode()).hexdigest()[:32]
 
 
-def guest_id(request: Request, response: Response | None = None) -> str:
-    """A stable id for an unauthenticated visitor.
-
-    Cookie-based, so it is trivially defeated by clearing cookies -- which is
-    fine. This is a nudge toward signing up, not a security control, and the
-    free tier it guards costs nothing. Treating it as a real limit would mean
-    fingerprinting people, which is a worse trade than a few extra free runs.
-    """
-    gid = request.cookies.get("council_guest")
-    if not gid:
-        gid = secrets.token_urlsafe(16)
-        if response is not None:
-            response.set_cookie("council_guest", gid, httponly=True,
-                                samesite="lax", max_age=60 * 60 * 24 * 30)
-    return gid
-
-
 def guest_runs_left(request: Request) -> int:
     """Counted in the database, because an in-memory counter is not a limit.
 
@@ -619,7 +602,6 @@ async def api_create_conversation(request: Request, response: Response,
     user = optional_user(council_session)
     if user is None and council_session not in SHARED_SESSIONS:
         # Guest: allowed a conversation only while they have a run left.
-        gid = guest_id(request, response)
         if guest_runs_left(request) <= 0:
             raise HTTPException(401, "not authenticated")
         cid = await asyncio.to_thread(db.create_conversation, "Trial", None)
@@ -668,9 +650,7 @@ async def api_create_turn(
 ):
     user = optional_user(council_session)
     is_guest = user is None and council_session not in SHARED_SESSIONS
-    gid = ""
     if is_guest:
-        gid = guest_id(request, response)
         if guest_runs_left(request) <= 0:
             raise HTTPException(
                 401,
