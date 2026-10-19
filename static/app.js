@@ -819,6 +819,18 @@ function attachStream(turnId, turnEl) {
   startTimer();
   let retries = 0;
 
+  // The server sleeps when no page is connected to it, so a run whose tab was
+  // closed can be cut short. Say so while it runs, and ask before leaving.
+  const keepOpen = el("div", "keep-open",
+    "Keep this tab open until the answer finishes (usually 1–2 minutes).");
+  turnEl.insertBefore(keepOpen, turnEl.firstChild);
+  const warnLeave = (e) => { e.preventDefault(); e.returnValue = ""; };
+  window.addEventListener("beforeunload", warnLeave);
+  const finished = () => {
+    keepOpen.remove();
+    window.removeEventListener("beforeunload", warnLeave);
+  };
+
   const open = () => {
     if (state.stream) state.stream.close();
     const es = new EventSource(`/api/turns/${turnId}/stream?after=${state.lastSeq}`);
@@ -837,6 +849,7 @@ function attachStream(turnId, turnEl) {
         state.turnId = null;
         $("#send").disabled = false;
         setStage(null);
+        finished();
       }
     };
 
@@ -849,6 +862,7 @@ function attachStream(turnId, turnEl) {
         setStage(null);
         state.running = false;
         $("#send").disabled = false;
+        finished();
         toast("Lost connection to the run. Reload to see the result.");
         return;
       }
