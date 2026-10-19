@@ -59,6 +59,38 @@ def _drop_empty_sections(text: str) -> str:
     return cleaned.strip()
 
 
+# A heading line naming one of the sections the panels already show, in any of
+# the shapes models write it: "## DECIDE THESE", "**Open questions:**",
+# "4. DECIDE THESE", or the bare words on a line of their own.
+_HEADING = (r"(?im)^[ \t]*(?:\#{1,6}[ \t]*)?(?:\d+\.[ \t]*)?(?:\*\*[ \t]*)?\"?(?:%s)\"?"
+            r"[ \t]*\*{0,2}[ \t]*:?[ \t]*\*{0,2}[ \t]*$")
+# The next heading of any kind ends the section.
+_NEXT = re.compile(
+    r"(?m)^[ \t]*(?:\#{1,6}[ \t]+\S"
+    r"|\*\*[^*\n]+\*\*[ \t]*:?[ \t]*$"
+    r"|\d+\.[ \t]*\"?[A-Z][A-Z ]{3,}\"?[ \t]*$"
+    r"|[A-Z][A-Z ]{3,}[ \t]*$)")
+
+
+def _drop_shown_sections(text: str, names: tuple) -> str:
+    """Remove prose sections whose content the interface already shows as a panel.
+
+    The prompt asks for the material twice -- once as data, once as prose -- so
+    that a failed parse never loses it. When the parse SUCCEEDS, the reader got
+    the same list twice: a "Decide these" panel and, right above it, a
+    "DECIDE THESE" section saying the same thing. Only called for the kinds that
+    actually parsed, so a failed parse still leaves the prose as the fallback.
+    """
+    pattern = re.compile(_HEADING % "|".join(re.escape(n) for n in names))
+    while True:
+        m = pattern.search(text)
+        if not m:
+            return text
+        nxt = _NEXT.search(text, m.end())
+        end = nxt.start() if nxt else len(text)
+        text = text[:m.start()] + text[end:]
+
+
 def _all_blocks(answer: str) -> list:
     """Every data block in the answer, in order, labelled or not.
 
@@ -131,6 +163,10 @@ def extract(answer: str) -> tuple[str, list[Point], list[Decision]]:
         points.extend(_parse_points(data))
         decisions.extend(_parse_decisions(data))
 
+    if decisions:
+        cleaned = _drop_shown_sections(cleaned, ("DECIDE THESE", "OPEN QUESTIONS", "DECISIONS"))
+    if points:
+        cleaned = _drop_shown_sections(cleaned, ("DISAGREEMENTS", "UNRESOLVED"))
     return _drop_empty_sections(cleaned), points[:6], decisions[:6]
 
 

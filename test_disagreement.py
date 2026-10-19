@@ -183,6 +183,47 @@ def main() -> int:
     cleaned, _, _ = extract(invented)
     check("an unrelated empty heading is left alone", "RANDOM SECTION" in cleaned)
 
+    # --- the same list shown twice: the panel AND the prose section ---
+    twice = '''```json council-disagreements
+{"disagreements": [{"point": "Backend or not", "sides": [], "resolution": "No backend yet."}],
+ "decisions": [{"question": "Do you need offline use?", "why": "decides the backend"}]}
+```
+
+THE PLAN
+
+Ship the small thing first.
+
+UNRESOLVED
+
+Backend or not: no backend yet.
+
+DECIDE THESE
+
+Do you need offline use? It decides the backend.
+
+## Notes
+Keep the logs.'''
+    cleaned, pts, decs = extract(twice)
+    check("panel data parsed", len(pts) == 1 and len(decs) == 1)
+    check("prose DECIDE THESE removed when the panel shows it", "DECIDE THESE" not in cleaned, cleaned)
+    check("prose UNRESOLVED removed when the panel shows it", "UNRESOLVED" not in cleaned, cleaned)
+    check("the plan and later sections survive",
+          "Ship the small thing first." in cleaned and "Keep the logs." in cleaned, cleaned)
+
+    markdown = ("```json council-disagreements\n{\"disagreements\": [], \"decisions\": "
+                "[{\"question\": \"Q?\", \"why\": \"w\"}]}\n```\n\n## Answer\nDo it.\n\n"
+                "## 4. Open questions\n- Q? w\n\n**Disagreements:**\nThe advisors agreed here.\n")
+    cleaned, pts, decs = extract(markdown)
+    check("markdown 'Open questions' heading removed with its body", "Open questions" not in cleaned
+          and "Do it." in cleaned, cleaned)
+    check("a prose section the panel does NOT show is kept (no disagreements parsed)",
+          "The advisors agreed here." in cleaned, cleaned)
+
+    no_block = "THE PLAN\n\nDo it.\n\nDECIDE THESE\n\nWhich database?\n"
+    cleaned, _, decs = extract(no_block)
+    check("without a parsed block the prose section stays (the fallback)",
+          "Which database?" in cleaned and not decs, cleaned)
+
     passed, total = sum(results), len(results)
     print(f"\n{passed}/{total} checks passed")
     return 0 if passed == total else 1

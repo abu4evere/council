@@ -85,6 +85,12 @@ HOUSE_RULES = """HOW THIS COUNCIL SPEAKS -- these rules override any instinct to
   invention is the failure mode that costs this user the most.
 - Match the user's register -- if they write casually, answer casually. The
   CONCLUSION never changes with the register, only the delivery.
+- Never state a fact about the user's situation that they did not give you:
+  their code, file formats, languages, sizes, numbers, names, what they have
+  already built. You may RECOMMEND anything; you may not DESCRIBE their system
+  as if you had seen it. When an answer depends on something you were not told,
+  write "Assuming ..." or ask. An invented detail stated as fact is worse than
+  a gap, because the reader cannot tell which parts were made up.
 
 """
 
@@ -97,7 +103,8 @@ YOUR ANGLE: {framing}
 
 Rules:
 - Lead with your actual recommendation. No throat-clearing, no restating the question.
-- Be concrete. Name tools, numbers, file layouts, tradeoffs.
+- Be concrete in what you RECOMMEND: name tools, numbers, file layouts, tradeoffs. But describe \
+the user's existing situation only as far as they described it.
 - Where you are guessing because the question is underspecified, say so explicitly and state \
 the assumption you are proceeding under.
 - End with a section "UNKNOWNS" listing anything you needed to know but were not told.
@@ -114,6 +121,11 @@ is actually right for this user's situation and say in one line why the other lo
 - Where one advisor raised something the others missed, keep it -- that is usually the most \
 valuable material in the whole set.
 - Discard filler, hedging, and anything that reads as generic advice.
+- Do not carry an advisor's guess into your answer as fact. Advisors often fill gaps with \
+invented specifics about the user's setup (a file format, a language, a size). Drop those, or \
+keep them only as a labelled assumption ("Assuming ..."). Check every factual claim about the \
+user against what the user actually wrote.
+- Keep the whole answer under 600 words. The reader can ask for more; they cannot un-read a wall.
 
 Structure your answer as:
 1. The recommendation, stated directly in 2-4 sentences.
@@ -185,7 +197,11 @@ in one line. Do not paper over these.
 much hinges on them. For each, note what changes depending on the answer.
 
 Section 4 is the most important part of your output. The user built this tool because they do \
-not always know which questions to ask -- this is where you answer that.""" + _BLOCK_SPEC
+not always know which questions to ask -- this is where you answer that.
+
+Two more rules. Do not carry a debater's guess into THE PLAN as fact: anything the user did not \
+say about their own situation is either dropped or labelled "Assuming ...". And keep the whole \
+answer under 700 words; a plan that needs more than that should say what to do first.""" + _BLOCK_SPEC
 
 
 def proposer_system(label: str, framing: str, level: str = "medium") -> str:
